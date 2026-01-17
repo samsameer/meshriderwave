@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MeshRider Wave ATAK Plugin Manifest
+
+    This plugin integrates MR Wave PTT functionality into ATAK (Android Tactical Assault Kit).
+    It provides:
+    - PTT button on ATAK toolbar for voice transmission
+    - CoT (Cursor-on-Target) message synchronization
+    - Blue Force Tracking integration
+    - Channel management from within ATAK
+
+    Copyright (C) 2024-2026 DoodleLabs. All Rights Reserved.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ATAK Plugin Identification -->
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
+
+    <!-- Plugin Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Permission to communicate with MR Wave app -->
+    <uses-permission android:name="com.doodlelabs.meshriderwave.permission.ATAK_BRIDGE" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_mrwave_plugin"
+        android:label="@string/plugin_name"
+        android:supportsRtl="true"
+        tools:targetApi="35">
+
+        <!-- ATAK Plugin Metadata - Required for ATAK to load the plugin -->
+        <meta-data
+            android:name="plugin-api"
+            android:value="true" />
+
+        <!-- Plugin version info -->
+        <meta-data
+            android:name="plugin-version"
+            android:value="1.0.0" />
+
+        <!-- Minimum ATAK version required -->
+        <meta-data
+            android:name="atak-version"
+            android:value="4.10.0" />
+
+        <!-- Plugin description shown in ATAK plugin manager -->
+        <meta-data
+            android:name="plugin-description"
+            android:value="@string/plugin_description" />
+
+        <!-- Plugin icon in ATAK plugin manager -->
+        <meta-data
+            android:name="plugin-icon"
+            android:resource="@drawable/ic_mrwave_plugin" />
+
+        <!-- Plugin takes care of its own registration -->
+        <meta-data
+            android:name="plugin-takesOwnership"
+            android:value="false" />
+
+        <!-- Plugin Lifecycle Service -->
+        <service
+            android:name=".MRWavePluginService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.doodlelabs.meshriderwave.atak.PLUGIN_SERVICE" />
+            </intent-filter>
+        </service>
+
+        <!-- PTT Toolbar Button Receiver -->
+        <receiver
+            android:name=".receivers.PTTToolbarReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.doodlelabs.meshriderwave.atak.PTT_TOOLBAR" />
+                <action android:name="com.atakmap.android.maps.TOOLBAR_PERMISSION" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Channel Selector Dropdown Receiver -->
+        <receiver
+            android:name=".receivers.ChannelDropdownReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.doodlelabs.meshriderwave.atak.CHANNEL_DROPDOWN" />
+            </intent-filter>
+        </receiver>
+
+        <!-- CoT Message Receiver - Handles incoming CoT from ATAK -->
+        <receiver
+            android:name=".receivers.CoTReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.atakmap.android.cot.REMOTE_INPUT" />
+                <action android:name="com.atakmap.android.cot.DISPATCH" />
+            </intent-filter>
+        </receiver>
+
+        <!-- MR Wave Response Receiver - Handles responses from MR Wave app -->
+        <receiver
+            android:name=".receivers.MRWaveResponseReceiver"
+            android:exported="true"
+            android:permission="com.doodlelabs.meshriderwave.permission.ATAK_BRIDGE"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.doodlelabs.meshriderwave.atak.RESPONSE" />
+                <action android:name="com.doodlelabs.meshriderwave.atak.PTT_STATE_CHANGED" />
+                <action android:name="com.doodlelabs.meshriderwave.atak.CHANNEL_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Plugin Lifecycle Provider - Entry point for ATAK to load the plugin -->
+        <provider
+            android:name=".MRWavePluginLifecycleProvider"
+            android:authorities="com.doodlelabs.meshriderwave.atak.lifecycle"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider">
+            <meta-data
+                android:name="plugin-lifecycle"
+                android:value="com.doodlelabs.meshriderwave.atak.MRWavePlugin" />
+        </provider>
+
+    </application>
+
+</manifest>

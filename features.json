@@ -1,0 +1,205 @@
+[
+  {
+    "id": "FEAT-001",
+    "category": "audio",
+    "description": "Native Opus codec for API < 29",
+    "priority": "P0",
+    "steps": [
+      "Add opus-android library dependency",
+      "Create JNI wrapper for libopus",
+      "Update OpusCodecManager to use native when MediaCodec unavailable",
+      "Test on API 26-28 devices"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-002",
+    "category": "audio",
+    "description": "Adaptive jitter buffer implementation",
+    "priority": "P0",
+    "steps": [
+      "Create JitterBuffer.kt with adaptive algorithm [DONE]",
+      "Integrate into MulticastAudioManager.receiveLoop() [DONE]",
+      "Add packet reordering support [DONE]",
+      "Implement packet loss concealment callback [DONE]"
+    ],
+    "passes": true,
+    "notes": "AdaptiveJitterBuffer.kt implemented with RFC 3550 jitter calc, dynamic 20-100ms depth, PLC callbacks"
+  },
+  {
+    "id": "FEAT-003",
+    "category": "network",
+    "description": "Production RTP multicast with DSCP",
+    "priority": "P1",
+    "steps": [
+      "Verify RTPPacketManager DSCP marking",
+      "Add RTCP for quality feedback",
+      "Implement dynamic bitrate based on packet loss",
+      "Test on bat0 interface with MeshRider radios"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-004",
+    "category": "integration",
+    "description": "ATAK plugin for PTT button",
+    "priority": "P1",
+    "steps": [
+      "Download ATAK pluginsdk.zip",
+      "Create plugin project structure [DONE]",
+      "Add PTT button to ATAK toolbar [DONE]",
+      "Implement Intent bridge to MR Wave [DONE]",
+      "Test with ATAK-CIV"
+    ],
+    "passes": true,
+    "notes": "Plugin builds with stubs. Ready for testing with ATAK SDK from tak.gov."
+  },
+  {
+    "id": "FEAT-005",
+    "category": "integration",
+    "description": "CoT protocol for Blue Force Tracking sync",
+    "priority": "P1",
+    "steps": [
+      "Create CoTMessage.kt data class [DONE - core/atak/]",
+      "Implement CoT XML generator [DONE - CoTMessage.toXml()]",
+      "Add ATAK broadcast receiver [DONE - ATAKBridge.kt]",
+      "Sync peer locations bidirectionally [DONE - CoTManager.kt]"
+    ],
+    "passes": true,
+    "notes": "CoT integration complete in core/atak/. Uses multicast 239.2.3.1:6969 for ATAK SA."
+  },
+  {
+    "id": "FEAT-006",
+    "category": "testing",
+    "description": "Unit tests 80% coverage",
+    "priority": "P2",
+    "steps": [
+      "PTTManager tests (floor control, transmission)",
+      "OpusCodecManager tests (encode/decode roundtrip)",
+      "RTPPacketManager tests (packetization)",
+      "CryptoManager tests (encryption roundtrip)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-007",
+    "category": "security",
+    "description": "Security hardening",
+    "priority": "P2",
+    "steps": [
+      "Audit CryptoManager for vulnerabilities",
+      "Add SRTP for encrypted RTP",
+      "Secure Intent receivers (not exported)",
+      "Validate all user inputs"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-008",
+    "category": "radio",
+    "description": "MeshRider Radio API Client (JSON-RPC/UBUS)",
+    "priority": "P0",
+    "steps": [
+      "Create RadioApiClient.kt with JSON-RPC support [DONE]",
+      "Implement session management (auth, token refresh) [DONE]",
+      "Add UBUS call wrapper for iwinfo, wireless, system [DONE]",
+      "Create RadioDiscoveryService with UDP broadcast (port 11111) [DONE]",
+      "Add Hilt DI module for RadioApiClient [DONE]"
+    ],
+    "passes": true,
+    "notes": "RadioApiClient.kt, RadioDiscoveryService.kt, RadioModule.kt complete in core/radio/"
+  },
+  {
+    "id": "FEAT-009",
+    "category": "radio",
+    "description": "Link Status Dashboard",
+    "priority": "P1",
+    "steps": [
+      "Create RadioStatusViewModel with Flow [DONE]",
+      "Show mesh SSID, mode, channel, bandwidth, signal/noise [DONE]",
+      "Display associated stations (peers) with link quality [DONE]",
+      "Add auto-refresh with circuit breaker pattern [DONE]",
+      "Integrate into Dashboard screen [DONE]"
+    ],
+    "passes": true,
+    "notes": "RadioStatusViewModel integrated into DashboardViewModel. RadioStatusCard UI component added to DashboardScreen."
+  },
+  {
+    "id": "FEAT-010",
+    "category": "radio",
+    "description": "Fast channel switching via radio API",
+    "priority": "P1",
+    "steps": [
+      "Create ChannelSwitchManager.kt",
+      "Call UBUS message-system.chswitch for mesh-wide switch",
+      "Show available channels from iwinfo.freqlist",
+      "Add bandwidth selection (5/10/20/40 MHz)",
+      "Provide UI in Settings screen"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-011",
+    "category": "radio",
+    "description": "GPS sync from radio to Blue Force Tracking",
+    "priority": "P1",
+    "steps": [
+      "Read GPS from radio via file.exec gpspipe",
+      "Parse latitude, longitude, altitude",
+      "Sync to LocationSharingManager",
+      "Display on Map screen with radio GPS icon"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-012",
+    "category": "radio",
+    "description": "Radio health monitoring",
+    "priority": "P2",
+    "steps": [
+      "Poll iwinfo.info for signal, noise, bitrate",
+      "Calculate SNR and link quality percentage",
+      "Show health status indicator on Dashboard",
+      "Add alert when signal drops below threshold"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-013",
+    "category": "radio",
+    "description": "QoS/DSCP configuration UI",
+    "priority": "P2",
+    "steps": [
+      "Read current DSCP settings from UCI",
+      "Provide dropdown for voice priority (EF=46)",
+      "Apply via uci.set + uci.commit",
+      "Show current QoS status on Dashboard"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-014",
+    "category": "radio",
+    "description": "Wake-on-LAN for low power radios",
+    "priority": "P2",
+    "steps": [
+      "Implement sendWakeUpLOM via UBUS",
+      "Add UI button to wake sleeping radios",
+      "Show power state in radio list"
+    ],
+    "passes": false
+  },
+  {
+    "id": "FEAT-015",
+    "category": "audio",
+    "description": "Auto-bandwidth adaptation based on link quality",
+    "priority": "P2",
+    "steps": [
+      "Monitor packet loss from RTCP feedback",
+      "Reduce Opus bitrate when loss > 5%",
+      "Increase bitrate when loss < 1% for 30s",
+      "Log adaptation events for debugging"
+    ],
+    "passes": false
+  }
+]

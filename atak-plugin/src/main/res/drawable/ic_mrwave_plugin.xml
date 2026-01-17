@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MeshRider Wave Plugin Icon
+    Radio waves emanating from a mesh network node
+    Copyright (C) 2024-2026 DoodleLabs. All Rights Reserved.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Background circle -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M24,24m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
+
+    <!-- Radio tower/antenna -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,12L24,28"
+        android:strokeWidth="3"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+
+    <!-- Tower base -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,28L28,28L26,36L22,36Z" />
+
+    <!-- Left wave 1 (outer) -->
+    <path
+        android:pathData="M14,18Q10,24 14,30"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Left wave 2 (inner) -->
+    <path
+        android:pathData="M17,20Q14,24 17,28"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Right wave 1 (outer) -->
+    <path
+        android:pathData="M34,18Q38,24 34,30"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Right wave 2 (inner) -->
+    <path
+        android:pathData="M31,20Q34,24 31,28"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+</vector>

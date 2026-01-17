@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MeshRider Wave ATAK Plugin Strings
+    Copyright (C) 2024-2026 DoodleLabs. All Rights Reserved.
+-->
+<resources>
+    <!-- Plugin Info -->
+    <string name="plugin_name">MeshRider Wave</string>
+    <string name="plugin_description">Push-to-Talk integration for MeshRider mesh radios. Provides PTT button on toolbar, channel management, and Blue Force Tracking sync with MR Wave app.</string>
+    <string name="plugin_version">1.0.0</string>
+
+    <!-- PTT Button -->
+    <string name="ptt_button_label">PTT</string>
+    <string name="ptt_button_description">Push to Talk</string>
+    <string name="ptt_transmitting">Transmitting…</string>
+    <string name="ptt_idle">Press to talk</string>
+
+    <!-- Channel Selector -->
+    <string name="channel_selector_title">Select Channel</string>
+    <string name="channel_default">Default</string>
+    <string name="channel_active">(Active)</string>
+    <string name="channel_members">%d members</string>
+
+    <!-- Status Messages -->
+    <string name="status_connected">Connected to MR Wave</string>
+    <string name="status_disconnected">MR Wave not connected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_error">Connection error</string>
+
+    <!-- Error Messages -->
+    <string name="error_mrwave_not_installed">MeshRider Wave app not installed</string>
+    <string name="error_mrwave_not_running">MeshRider Wave app not running</string>
+    <string name="error_permission_denied">Permission denied by MR Wave</string>
+    <string name="error_ptt_failed">Failed to start transmission</string>
+    <string name="error_channel_failed">Failed to switch channel</string>
+
+    <!-- Notifications -->
+    <string name="notification_title">MeshRider Wave Active</string>
+    <string name="notification_text">PTT ready on channel: %s</string>
+</resources>

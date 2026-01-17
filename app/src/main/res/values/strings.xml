@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mesh Rider Wave</string>
+    <string name="app_tagline">Comms Without Compromise</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_contacts">Contacts</string>
+    <string name="nav_calls">Calls</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Contacts -->
+    <string name="add_contact">Add Contact</string>
+    <string name="scan_qr">Scan QR Code</string>
+    <string name="show_qr">Show My QR Code</string>
+    <string name="contact_name">Contact Name</string>
+    <string name="no_contacts">No contacts yet</string>
+    <string name="unknown_caller">Unknown Caller</string>
+
+    <!-- Calls -->
+    <string name="voice_call">Voice Call</string>
+    <string name="video_call">Video Call</string>
+    <string name="incoming_call">Incoming Call</string>
+    <string name="outgoing_call">Calling…</string>
+    <string name="call_connected">Connected</string>
+    <string name="call_ended">Call Ended</string>
+    <string name="missed_call">Missed Call</string>
+    <string name="accept">Accept</string>
+    <string name="decline">Decline</string>
+    <string name="end_call">End Call</string>
+    <string name="mute">Mute</string>
+    <string name="unmute">Unmute</string>
+    <string name="speaker">Speaker</string>
+    <string name="camera">Camera</string>
+    <string name="switch_camera">Switch Camera</string>
+
+    <!-- Service -->
+    <string name="service_notification_title">Mesh Rider Wave</string>
+    <string name="service_notification_text">Listening for incoming calls</string>
+
+    <!-- Settings -->
+    <string name="settings_general">General</string>
+    <string name="settings_network">Network</string>
+    <string name="settings_audio">Audio</string>
+    <string name="settings_video">Video</string>
+    <string name="settings_security">Security</string>
+    <string name="settings_about">About</string>
+
+    <!-- Errors -->
+    <string name="error_network">Network error</string>
+    <string name="error_connection">Connection failed</string>
+    <string name="error_permission">Permission required</string>
+</resources>

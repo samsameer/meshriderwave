@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Mesh Rider Wave - Stop Icon for Notification
+    Copyright (C) 2024-2026 Jabbir Basha P. All Rights Reserved.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!-- Stop icon (square) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6,6h12v12H6z"/>
+</vector>
