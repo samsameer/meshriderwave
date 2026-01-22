@@ -11,7 +11,12 @@
  * - Hardware PTT button support
  * - Voice Activity Detection (VAD)
  *
- * Reference: Zello, EVO-PTT architecture
+ * UPDATED Jan 2026: Integrated 3GPP MCPTT compliant floor control
+ * - FloorControlManager for state machine
+ * - FloorArbitrator for centralized mode
+ * - Encrypted floor control messages
+ *
+ * Reference: Zello, EVO-PTT architecture, 3GPP TS 24.379
  */
 
 package com.doodlelabs.meshriderwave.core.ptt
@@ -27,6 +32,8 @@ import com.doodlelabs.meshriderwave.core.audio.OpusCodecManager
 import com.doodlelabs.meshriderwave.core.audio.RTPPacketManager
 import com.doodlelabs.meshriderwave.core.crypto.CryptoManager
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
+import com.doodlelabs.meshriderwave.core.ptt.floor.FloorControlManager
+import com.doodlelabs.meshriderwave.core.ptt.floor.FloorArbitrator
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
@@ -62,7 +69,9 @@ class PTTManager @Inject constructor(
     private val meshNetworkManager: MeshNetworkManager,
     private val contactRepository: ContactRepository,
     private val multicastAudioManager: MulticastAudioManager,
-    private val opusCodec: OpusCodecManager
+    private val opusCodec: OpusCodecManager,
+    private val floorControlManager: FloorControlManager,
+    private val floorArbitrator: FloorArbitrator
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -112,6 +121,10 @@ class PTTManager @Inject constructor(
 
     private var transportMode: TransportMode = TransportMode.MULTICAST
     private var useOpusCodec: Boolean = true  // Use Opus even in legacy mode for bandwidth savings
+
+    // Track if cleanup has been called to prevent double cleanup (FIXED Jan 2026)
+    @Volatile
+    private var isCleanedUp = false
 
     companion object {
         // Audio configuration
@@ -333,56 +346,103 @@ class PTTManager @Inject constructor(
 
     /**
      * Request floor and start transmission
+     *
+     * UPDATED Jan 2026: Uses 3GPP MCPTT compliant FloorControlManager
+     * - Proper state machine (IDLE → PENDING → GRANTED)
+     * - Priority-based arbitration
+     * - Distributed/centralized mode support
+     * - Encrypted floor control messages
      */
-    suspend fun requestFloor(channel: PTTChannel? = _activeChannel.value): FloorResult {
+    suspend fun requestFloor(
+        channel: PTTChannel? = _activeChannel.value,
+        priority: FloorControlManager.FloorPriority = FloorControlManager.FloorPriority.NORMAL,
+        isEmergency: Boolean = false
+    ): FloorResult {
         if (channel == null) return FloorResult.Error("No active channel")
         val stateFlow = transmitStates[channel.shortId] ?: return FloorResult.Error("Channel not found")
-        val currentState = stateFlow.value
 
-        logD("requestFloor: ${channel.name}, current status=${currentState.status}")
-
-        // Check if we can request
-        if (!currentState.canRequestFloor) {
-            val reason = when (currentState.status) {
-                PTTTransmitState.Status.RECEIVING -> "Channel busy"
-                PTTTransmitState.Status.BLOCKED -> "Higher priority transmission"
-                PTTTransmitState.Status.TRANSMITTING -> "Already transmitting"
-                else -> "Cannot transmit now"
-            }
-            onFloorDenied?.invoke(channel, reason)
-            return FloorResult.Denied(reason)
-        }
+        logD("requestFloor: ${channel.name}, priority=$priority, emergency=$isEmergency")
 
         // Check member permissions
         val member = channel.members.find { it.publicKey.contentEquals(ownPublicKey) }
-        if (member?.canTransmit != true) {
+        if (member?.canTransmit != true && !isEmergency) {
             onFloorDenied?.invoke(channel, "No transmit permission")
             return FloorResult.Denied("No transmit permission")
         }
 
-        // Request floor from other members
-        val floorGranted = requestFloorFromPeers(channel)
+        // Initialize floor control for this channel if needed
+        floorControlManager.initChannel(channel.channelId)
+        floorControlManager.ownPublicKey = ownPublicKey
+        floorControlManager.ownName = member?.name ?: "Unknown"
 
-        return if (floorGranted) {
-            startTransmission(channel)
-            FloorResult.Granted
-        } else {
-            stateFlow.update { it.copy(status = PTTTransmitState.Status.QUEUED) }
-            FloorResult.Queued
+        // Request floor via MCPTT-compliant floor control
+        val result = floorControlManager.requestFloor(
+            channelId = channel.channelId,
+            priority = priority,
+            isEmergency = isEmergency
+        )
+
+        return when (result) {
+            is FloorControlManager.FloorRequestResult.Granted -> {
+                logI("Floor GRANTED via MCPTT floor control")
+                startTransmission(channel, isEmergency)
+                FloorResult.Granted
+            }
+            is FloorControlManager.FloorRequestResult.Queued -> {
+                logI("Floor QUEUED at position ${result.position}/${result.total}")
+                stateFlow.update { it.copy(status = PTTTransmitState.Status.QUEUED) }
+
+                // Set up callback for when floor becomes available
+                setupFloorGrantedCallback(channel)
+
+                FloorResult.Queued
+            }
+            is FloorControlManager.FloorRequestResult.Denied -> {
+                logW("Floor DENIED: ${result.reason}")
+                onFloorDenied?.invoke(channel, result.reason)
+                FloorResult.Denied(result.reason)
+            }
+            is FloorControlManager.FloorRequestResult.Error -> {
+                logE("Floor request ERROR: ${result.message}")
+                FloorResult.Error(result.message)
+            }
+        }
+    }
+
+    /**
+     * Set up callback for when queued floor request is granted
+     */
+    private fun setupFloorGrantedCallback(channel: PTTChannel) {
+        floorControlManager.onFloorGranted = { channelId ->
+            if (channelId.contentEquals(channel.channelId)) {
+                scope.launch {
+                    logI("Queued floor request now GRANTED")
+                    startTransmission(channel)
+                }
+            }
         }
     }
 
     /**
      * Release floor and stop transmission
+     *
+     * UPDATED Jan 2026: Uses FloorControlManager for proper release
      */
     suspend fun releaseFloor(channel: PTTChannel? = _activeChannel.value) {
         if (channel == null) return
         logD("releaseFloor: ${channel.name}")
+
+        // Release via floor control manager
+        floorControlManager.releaseFloor(channel.channelId)
+
+        // Stop audio transmission
         stopTransmission(channel)
     }
 
     /**
      * Send emergency broadcast (highest priority)
+     *
+     * UPDATED Jan 2026: Uses MCPTT emergency priority override
      */
     suspend fun sendEmergencyBroadcast(
         channel: PTTChannel,
@@ -393,7 +453,20 @@ class PTTManager @Inject constructor(
         // Vibrate emergency pattern
         vibrate(VIBRATE_EMERGENCY)
 
-        // Override any current transmission
+        // Request floor with EMERGENCY priority (overrides all)
+        val result = requestFloor(
+            channel = channel,
+            priority = FloorControlManager.FloorPriority.EMERGENCY,
+            isEmergency = true
+        )
+
+        if (result != FloorResult.Granted) {
+            logE("Emergency floor request failed: $result")
+            // In true emergency, we might want to force broadcast anyway
+            // For now, we respect the floor control
+        }
+
+        // Original emergency override logic (kept for backwards compatibility)
         val stateFlow = transmitStates[channel.shortId] ?: return
         stateFlow.update {
             it.copy(
@@ -795,8 +868,10 @@ class PTTManager @Inject constructor(
         val stateFlow = transmitStates[channel.shortId] ?: return false
 
         // Check if floor is already held by someone
-        if (stateFlow.value.currentSpeaker != null && !stateFlow.value.currentSpeaker!!.publicKey.contentEquals(ownPublicKey)) {
-            logD("requestFloorFromPeers: floor already held by ${stateFlow.value.currentSpeaker?.name}")
+        // CRASH-FIX Jan 2026: Safe null check with let instead of !!
+        val currentSpeaker = stateFlow.value.currentSpeaker
+        if (currentSpeaker != null && !currentSpeaker.publicKey.contentEquals(ownPublicKey)) {
+            logD("requestFloorFromPeers: floor already held by ${currentSpeaker.name}")
             return false
         }
 
@@ -862,12 +937,14 @@ class PTTManager @Inject constructor(
         }
 
         // If someone else is transmitting, inform the requester
-        if (stateFlow.value.currentSpeaker != null) {
-            logD("handleFloorRequest: floor already taken by ${stateFlow.value.currentSpeaker?.name}")
+        // CRASH-FIX Jan 2026: Safe null check with let instead of !!
+        val floorHolder = stateFlow.value.currentSpeaker
+        if (floorHolder != null) {
+            logD("handleFloorRequest: floor already taken by ${floorHolder.name}")
             scope.launch {
                 broadcastToChannel(channel, PTTMessageType.FLOOR_DENIED, mapOf(
                     "reason" to "floor_taken",
-                    "holder" to stateFlow.value.currentSpeaker!!.publicKey.toHexString()
+                    "holder" to floorHolder.publicKey.toHexString()
                 ))
             }
         }
@@ -1028,25 +1105,47 @@ class PTTManager @Inject constructor(
 
     /**
      * Cleanup resources
+     * FIXED Jan 2026: Made idempotent to prevent issues on double cleanup
      */
     fun cleanup() {
+        // Prevent double cleanup
+        if (isCleanedUp) {
+            logD("PTTManager cleanup: already cleaned up, skipping")
+            return
+        }
+        isCleanedUp = true
+
         logI("PTTManager cleanup: releasing audio resources")
 
-        scope.cancel()
+        // Get stats before cleanup (while codec is still valid)
+        val stats = try {
+            getCodecStats()
+        } catch (e: Exception) {
+            null
+        }
+
+        // Stop audio first (before scope cancellation)
         stopAudioCapture()
         stopAudioPlayback()
         transmitStates.clear()
 
-        // Release new audio components
-        if (transportMode == TransportMode.MULTICAST) {
-            multicastAudioManager.release()
+        // Release audio components
+        try {
+            if (transportMode == TransportMode.MULTICAST) {
+                multicastAudioManager.release()
+            }
+            opusCodec.release()
+        } catch (e: Exception) {
+            logE("Error releasing audio components", e)
         }
-        opusCodec.release()
 
-        // Log final stats
-        getCodecStats()?.let { stats ->
-            logI("Final codec stats: ${stats.compressionRatio}x compression, " +
-                 "${stats.framesEncoded} frames encoded, ${stats.framesDecoded} frames decoded")
+        // Cancel scope last (after all cleanup)
+        scope.cancel()
+
+        // Log final stats (use cached value)
+        stats?.let {
+            logI("Final codec stats: ${it.compressionRatio}x compression, " +
+                 "${it.framesEncoded} frames encoded, ${it.framesDecoded} frames decoded")
         }
     }
 

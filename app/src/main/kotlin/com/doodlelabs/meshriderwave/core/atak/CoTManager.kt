@@ -604,7 +604,8 @@ class CoTManager @Inject constructor(
     private fun startNetworkMonitoring() {
         connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
 
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
+        // CRASH-FIX Jan 2026: Use local val to ensure non-null without !!
+        val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(TAG, "Network available")
                 // Rejoin multicast groups
@@ -621,13 +622,14 @@ class CoTManager @Inject constructor(
                 Log.d(TAG, "Network lost")
             }
         }
+        networkCallback = callback
 
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .build()
 
         try {
-            connectivityManager?.registerNetworkCallback(request, networkCallback!!)
+            connectivityManager?.registerNetworkCallback(request, callback)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register network callback", e)
         }

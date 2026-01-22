@@ -506,7 +506,8 @@ class MLSGroupManager @Inject constructor(
             for (proposal in proposals) {
                 when (proposal.type) {
                     ProposalType.ADD -> {
-                        val keyPackage = proposal.addKeyPackage!!
+                        // CRASH-FIX Jan 2026: Safe null check with continue instead of !!
+                        val keyPackage = proposal.addKeyPackage ?: continue
                         val newLeafIndex = newTree.addLeaf(LeafNode(
                             publicKey = keyPackage.initKey,
                             credential = keyPackage.credential,
@@ -531,10 +532,13 @@ class MLSGroupManager @Inject constructor(
                         ))
                     }
                     ProposalType.REMOVE -> {
-                        newTree.removeLeaf(proposal.removeLeafIndex!!)
+                        // CRASH-FIX Jan 2026: Safe null check with continue instead of !!
+                        val leafIndex = proposal.removeLeafIndex ?: continue
+                        newTree.removeLeaf(leafIndex)
                     }
                     ProposalType.UPDATE -> {
-                        val keyPackage = proposal.updateKeyPackage!!
+                        // CRASH-FIX Jan 2026: Safe null check with continue instead of !!
+                        val keyPackage = proposal.updateKeyPackage ?: continue
                         newTree.updateLeaf(proposal.sender, LeafNode(
                             publicKey = keyPackage.initKey,
                             credential = keyPackage.credential,
@@ -621,7 +625,8 @@ class MLSGroupManager @Inject constructor(
             for (proposal in commit.proposals) {
                 when (proposal.type) {
                     ProposalType.ADD -> {
-                        val keyPackage = proposal.addKeyPackage!!
+                        // CRASH-FIX Jan 2026: Safe null check with continue instead of !!
+                        val keyPackage = proposal.addKeyPackage ?: continue
                         newTree.addLeaf(LeafNode(
                             publicKey = keyPackage.initKey,
                             credential = keyPackage.credential,
@@ -629,10 +634,13 @@ class MLSGroupManager @Inject constructor(
                         ))
                     }
                     ProposalType.REMOVE -> {
-                        newTree.removeLeaf(proposal.removeLeafIndex!!)
+                        // CRASH-FIX Jan 2026: Safe null check with continue instead of !!
+                        val leafIndex = proposal.removeLeafIndex ?: continue
+                        newTree.removeLeaf(leafIndex)
                     }
                     ProposalType.UPDATE -> {
-                        val keyPackage = proposal.updateKeyPackage!!
+                        // CRASH-FIX Jan 2026: Safe null check with continue instead of !!
+                        val keyPackage = proposal.updateKeyPackage ?: continue
                         newTree.updateLeaf(proposal.sender, LeafNode(
                             publicKey = keyPackage.initKey,
                             credential = keyPackage.credential,

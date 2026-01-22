@@ -15,10 +15,14 @@ import com.doodlelabs.meshriderwave.core.audio.RTPPacketManager
 import com.doodlelabs.meshriderwave.core.crypto.CryptoManager
 import com.doodlelabs.meshriderwave.core.network.Connector
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
+import com.doodlelabs.meshriderwave.core.network.NetworkTypeDetector
 import com.doodlelabs.meshriderwave.data.local.SettingsDataStore
 import com.doodlelabs.meshriderwave.core.crypto.MLSGroupManager
 import com.doodlelabs.meshriderwave.core.group.GroupCallManager
 import com.doodlelabs.meshriderwave.core.ptt.PTTManager
+import com.doodlelabs.meshriderwave.core.ptt.floor.FloorControlManager
+import com.doodlelabs.meshriderwave.core.ptt.floor.FloorControlProtocol
+import com.doodlelabs.meshriderwave.core.ptt.floor.FloorArbitrator
 import com.doodlelabs.meshriderwave.data.repository.ContactRepositoryImpl
 import com.doodlelabs.meshriderwave.data.repository.GroupRepositoryImpl
 import com.doodlelabs.meshriderwave.data.repository.PTTChannelRepositoryImpl
@@ -77,8 +81,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideConnector(): Connector {
-        return Connector()
+    fun provideConnector(
+        networkTypeDetector: NetworkTypeDetector
+    ): Connector {
+        return Connector(networkTypeDetector)
     }
 
     @Provides
@@ -143,6 +149,36 @@ object AppModule {
         rtpPacketManager: RTPPacketManager
     ): MulticastAudioManager {
         return MulticastAudioManager(context, opusCodecManager, rtpPacketManager)
+    }
+
+    // =========================================================================
+    // FLOOR CONTROL (3GPP MCPTT Compliant) - January 2026
+    // =========================================================================
+
+    @Provides
+    @Singleton
+    fun provideFloorControlProtocol(
+        cryptoManager: CryptoManager,
+        meshNetworkManager: MeshNetworkManager
+    ): FloorControlProtocol {
+        return FloorControlProtocol(cryptoManager, meshNetworkManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideFloorControlManager(
+        cryptoManager: CryptoManager,
+        floorControlProtocol: FloorControlProtocol
+    ): FloorControlManager {
+        return FloorControlManager(cryptoManager, floorControlProtocol)
+    }
+
+    @Provides
+    @Singleton
+    fun provideFloorArbitrator(
+        floorControlProtocol: FloorControlProtocol
+    ): FloorArbitrator {
+        return FloorArbitrator(floorControlProtocol)
     }
 }
 

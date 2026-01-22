@@ -58,7 +58,7 @@ class CryptoManager @Inject constructor() {
         ownSecretKey: ByteArray
     ): ByteArray? {
         val messageBytes = message.toByteArray(StandardCharsets.UTF_8)
-        val signed = sign(messageBytes, ownSecretKey) ?: return null
+        val signed = signCombined(messageBytes, ownSecretKey) ?: return null
 
         // Prepend sender's public key to signed message
         val data = ByteArray(ownPublicKey.size + signed.size)
@@ -150,6 +150,32 @@ class CryptoManager @Inject constructor() {
     }
 
     /**
+     * Sign data with Ed25519 secret key.
+     * Returns detached signature (64 bytes).
+     *
+     * Military-grade Jan 2026: Public API for beacon signing
+     */
+    fun sign(data: ByteArray, secretKey: ByteArray): ByteArray? {
+        if (secretKey.size != Sign.SECRETKEYBYTES) return null
+
+        val signature = ByteArray(Sign.BYTES)
+        val rc = sodium.crypto_sign_detached(signature, null, data, data.size.toLong(), secretKey)
+        return if (rc == 0) signature else null
+    }
+
+    /**
+     * Verify Ed25519 signature.
+     *
+     * Military-grade Jan 2026: Public API for beacon verification
+     */
+    fun verify(data: ByteArray, signature: ByteArray, publicKey: ByteArray): Boolean {
+        if (signature.size != Sign.BYTES) return false
+        if (publicKey.size != Sign.PUBLICKEYBYTES) return false
+
+        return sodium.crypto_sign_verify_detached(signature, data, data.size.toLong(), publicKey) == 0
+    }
+
+    /**
      * Decrypt database using password
      */
     fun decryptDatabase(encryptedData: ByteArray, password: ByteArray): ByteArray? {
@@ -195,7 +221,10 @@ class CryptoManager @Inject constructor() {
 
     // --- Private helper methods ---
 
-    private fun sign(data: ByteArray, secretKey: ByteArray): ByteArray? {
+    /**
+     * Sign and combine signature + message (for encryptMessage).
+     */
+    private fun signCombined(data: ByteArray, secretKey: ByteArray): ByteArray? {
         if (secretKey.size != Sign.SECRETKEYBYTES) return null
 
         // Use Lazysodium high-level API

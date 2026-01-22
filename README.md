@@ -78,6 +78,8 @@ cd meshrider-wave-android
 | **Opus Codec** | 6-24 kbps voice compression (10-40x) | ✅ Complete |
 | **Multicast RTP** | Efficient one-to-many transmission | ✅ Complete |
 | **E2E Encryption** | libsodium + MLS group encryption | ✅ Complete |
+| **Identity-First Discovery** | Multi-source peer discovery (mDNS + beacon) | ✅ Complete |
+| **Smart Address Resolution** | Network-type-aware address prioritization | ✅ Complete |
 | **Blue Force Tracking** | Real-time GPS location sharing | ✅ Complete |
 | **SOS Emergency** | Priority broadcast with geofencing | ✅ Complete |
 | **Offline Messaging** | Store-and-forward when offline | ✅ Complete |
@@ -177,14 +179,19 @@ app/src/main/kotlin/com/doodlelabs/meshriderwave/
 │   │   └── MLSManager.kt              # MLS group encryption
 │   ├── di/
 │   │   └── AppModule.kt               # Hilt modules
+│   ├── discovery/                     # Identity-First Discovery [NEW]
+│   │   ├── BeaconManager.kt           # Multicast beacon send/receive
+│   │   ├── ContactAddressSync.kt      # Sync discovered addresses
+│   │   └── IdentityBeacon.kt          # Ed25519 signed beacon format
 │   ├── location/
 │   │   └── LocationSharingManager.kt  # Blue Force Tracking
 │   ├── messaging/
 │   │   └── OfflineMessageManager.kt   # Store-and-forward
 │   ├── network/
-│   │   ├── Connector.kt               # P2P connection
+│   │   ├── Connector.kt               # Smart P2P connection [ENHANCED]
 │   │   ├── MeshNetworkManager.kt      # Signaling
 │   │   ├── MeshService.kt             # Foreground service
+│   │   ├── NetworkTypeDetector.kt     # Network monitoring [NEW]
 │   │   └── PeerDiscoveryManager.kt    # mDNS discovery
 │   ├── ptt/
 │   │   ├── PTTManager.kt              # Floor control
@@ -205,9 +212,11 @@ app/src/main/kotlin/com/doodlelabs/meshriderwave/
 │       └── SettingsRepositoryImpl.kt
 ├── domain/
 │   ├── model/
+│   │   ├── AddressRecord.kt           # Address registry entry [NEW]
 │   │   ├── CallState.kt
-│   │   ├── Contact.kt
-│   │   └── Event.kt
+│   │   ├── Contact.kt                 # Enhanced with addressRegistry
+│   │   ├── Event.kt
+│   │   └── NetworkType.kt             # Network classification [NEW]
 │   └── repository/
 │       ├── ContactRepository.kt
 │       └── SettingsRepository.kt
@@ -358,6 +367,7 @@ if (packet != null) {
 | 5004 | UDP | RTP Multicast (voice) |
 | 6969 | UDP | CoT Multicast (ATAK SA) |
 | 6970 | UDP | CoT Multicast (Mesh Rider) |
+| 7777 | UDP | Identity Beacon (239.255.77.1) |
 | 10001 | TCP | P2P Signaling |
 | 11111 | UDP | Radio Discovery |
 | 80 | HTTP | Radio JSON-RPC API |

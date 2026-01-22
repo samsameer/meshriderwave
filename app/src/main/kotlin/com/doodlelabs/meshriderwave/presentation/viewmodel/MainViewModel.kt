@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class MainUiState(
-    val username: String = "User",
+    val username: String = "Mesh Rider",
     val nightMode: Boolean = true,
     val isServiceRunning: Boolean = false,
     val localAddresses: List<String> = emptyList(),
@@ -70,20 +70,21 @@ class MainViewModel @Inject constructor(
                 settingsRepository.autoReconnect,
                 settingsRepository.notificationsEnabled,
                 settingsRepository.pttVibration
+            // CRASH-FIX Jan 2026: Safe casts with defaults to prevent ClassCastException
             ) { values ->
                 _uiState.update {
                     it.copy(
-                        username = values[0] as String,
-                        nightMode = values[1] as Boolean,
-                        videoHwAccel = values[2] as Boolean,
-                        hardwareAEC = !(values[3] as Boolean), // disableAudioProcessing -> inverse for AEC
-                        vibrateOnCall = values[4] as Boolean,
-                        autoAcceptCalls = values[5] as Boolean,
-                        locationSharing = values[6] as Boolean,
-                        sosEnabled = values[7] as Boolean,
-                        autoReconnect = values[8] as Boolean,
-                        notificationsEnabled = values[9] as Boolean,
-                        pttVibration = values[10] as Boolean,
+                        username = (values.getOrNull(0) as? String) ?: "Unknown",
+                        nightMode = (values.getOrNull(1) as? Boolean) ?: false,
+                        videoHwAccel = (values.getOrNull(2) as? Boolean) ?: true,
+                        hardwareAEC = !((values.getOrNull(3) as? Boolean) ?: false), // disableAudioProcessing -> inverse for AEC
+                        vibrateOnCall = (values.getOrNull(4) as? Boolean) ?: true,
+                        autoAcceptCalls = (values.getOrNull(5) as? Boolean) ?: false,
+                        locationSharing = (values.getOrNull(6) as? Boolean) ?: false,
+                        sosEnabled = (values.getOrNull(7) as? Boolean) ?: true,
+                        autoReconnect = (values.getOrNull(8) as? Boolean) ?: true,
+                        notificationsEnabled = (values.getOrNull(9) as? Boolean) ?: true,
+                        pttVibration = (values.getOrNull(10) as? Boolean) ?: true,
                         isLoading = false
                     )
                 }

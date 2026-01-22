@@ -496,18 +496,38 @@ class MulticastAudioManager @Inject constructor(
         )
     }
 
+    // Track if release has been called (FIXED Jan 2026)
+    @Volatile
+    private var isReleased = false
+
     /**
      * Release all resources
+     * FIXED Jan 2026: Made idempotent to prevent double release issues
      */
     fun release() {
+        if (isReleased) {
+            logD("MulticastAudioManager already released, skipping")
+            return
+        }
+        isReleased = true
+
         logI("Releasing MulticastAudioManager")
 
         leaveTalkgroup()
         stopTransmit()
         stopReceiveLoop()
 
-        opusCodec.release()
-        rtpManager.release()
+        try {
+            opusCodec.release()
+        } catch (e: Exception) {
+            logE("Error releasing opus codec", e)
+        }
+
+        try {
+            rtpManager.release()
+        } catch (e: Exception) {
+            logE("Error releasing RTP manager", e)
+        }
 
         scope.cancel()
         isInitialized = false

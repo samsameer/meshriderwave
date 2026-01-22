@@ -69,7 +69,7 @@ class SettingsDataStore @Inject constructor(
     }
 
     // Username
-    val username: Flow<String> = dataStore.data.map { it[Keys.USERNAME] ?: "User" }
+    val username: Flow<String> = dataStore.data.map { it[Keys.USERNAME] ?: "Mesh Rider" }
 
     suspend fun setUsername(name: String) {
         dataStore.edit { it[Keys.USERNAME] = name }

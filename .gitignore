@@ -125,3 +125,6 @@ test-reports/
 # Coverage reports
 coverage/
 jacoco/
+
+# Claude Code settings
+.claude/

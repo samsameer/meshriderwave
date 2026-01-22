@@ -271,12 +271,15 @@ fun MeshRiderPremiumTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !darkTheme
-                isAppearanceLightNavigationBars = !darkTheme
+            // CRASH-FIX Jan 2026: Safe cast to prevent ClassCastException if context isn't Activity
+            val activity = view.context as? Activity
+            activity?.window?.let { window ->
+                window.statusBarColor = Color.Transparent.toArgb()
+                window.navigationBarColor = Color.Transparent.toArgb()
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
             }
         }
     }

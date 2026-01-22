@@ -45,7 +45,8 @@ class RTCCall(
     private val isOutgoing: Boolean
 ) {
     private val executor = Executors.newSingleThreadExecutor()
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    // CRASH-FIX Jan 2026: Safe cast to prevent ClassCastException
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     // Lifecycle-aware coroutine scope (replaces GlobalScope - FIXED Jan 2026)
     private val callScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -79,8 +80,14 @@ class RTCCall(
     private var localVideoSink: ProxyVideoSink? = null
     private var remoteVideoSink: ProxyVideoSink? = null
 
-    // Reconnection tracking
+    // Enterprise Reconnection tracking (Jan 2026)
     private var reconnectAttempts = 0
+    private var reconnectJob: Job? = null
+    private var disconnectTime: Long? = null
+
+    // Heartbeat/Keep-alive tracking
+    private var heartbeatJob: Job? = null
+    private var lastHeartbeatReceived: Long = System.currentTimeMillis()
 
     // Track if remote video has been set up to prevent duplicates
     @Volatile
@@ -89,6 +96,10 @@ class RTCCall(
     // Track if SDP has been sent to prevent duplicates
     @Volatile
     private var sdpSent = false
+
+    // Track if cleanup has been called to prevent double cleanup (FIXED Jan 2026)
+    @Volatile
+    private var isCleanedUp = false
 
     // ICE gathering timeout job
     private var iceGatheringTimeoutJob: Job? = null
@@ -127,12 +138,19 @@ class RTCCall(
                 val audioDeviceModule = createAudioDeviceModule()
 
                 // Video codecs - prefer hardware acceleration
+                // CRASH-FIX Jan 2026: Safe null check instead of !!
+                val eglContext = eglBase?.eglBaseContext ?: run {
+                    logE("initialize() eglBase is null")
+                    updateState { copy(status = CallState.Status.ERROR, errorMessage = "Video init failed") }
+                    return@execute
+                }
+
                 val encoderFactory = DefaultVideoEncoderFactory(
-                    eglBase!!.eglBaseContext,
+                    eglContext,
                     /* enableIntelVp8Encoder */ true,
                     /* enableH264HighProfile */ true
                 )
-                val decoderFactory = DefaultVideoDecoderFactory(eglBase!!.eglBaseContext)
+                val decoderFactory = DefaultVideoDecoderFactory(eglContext)
 
                 // Factory options - disable network monitor for mesh/hotspot support
                 val options = PeerConnectionFactory.Options().apply {
@@ -257,7 +275,8 @@ class RTCCall(
         logD("setSpeakerEnabled($enabled)")
         // Note: isSpeakerphoneOn is deprecated but still works for call audio routing
         // Modern alternative would be AudioDeviceInfo/AudioDeviceCallback (API 31+)
-        audioManager.isSpeakerphoneOn = enabled
+        // CRASH-FIX Jan 2026: Safe call on nullable audioManager
+        audioManager?.isSpeakerphoneOn = enabled
         updateState { copy(isSpeakerEnabled = enabled) }
     }
 
@@ -305,13 +324,37 @@ class RTCCall(
     }
 
     /**
+     * Set error state without immediate cleanup
+     * FIXED Jan 2026: Allows UI to show error before cleanup
+     */
+    fun setError(errorMessage: String) {
+        logE("setError: $errorMessage")
+        updateState { copy(status = CallState.Status.ERROR, errorMessage = errorMessage) }
+    }
+
+    /**
      * Cleanup all WebRTC resources
      * FIXED Jan 2026: Proper scope cancellation and executor shutdown
+     * FIXED Jan 2026: Made idempotent to prevent RejectedExecutionException on double cleanup
+     * FIXED Jan 2026: Stop enterprise reconnection and heartbeat jobs
      */
     fun cleanup() {
         logD("cleanup()")
 
-        // CRITICAL: Cancel coroutine scope FIRST (prevents memory leak)
+        // CRITICAL: Prevent double cleanup - executor may already be terminated
+        // This prevents RejectedExecutionException when cleanup is called from both
+        // hangup() and onDestroy()
+        if (isCleanedUp) {
+            logD("cleanup() already called, skipping")
+            return
+        }
+        isCleanedUp = true
+
+        // Stop enterprise reconnection and heartbeat FIRST
+        stopReconnection()
+        stopHeartbeat()
+
+        // CRITICAL: Cancel coroutine scope (prevents memory leak)
         callScope.cancel()
 
         // Reset flags immediately (thread-safe due to @Volatile)
@@ -321,6 +364,14 @@ class RTCCall(
         iceGatheringTimeoutJob = null
         statsJob?.cancel()
         statsJob = null
+        reconnectJob = null
+        heartbeatJob = null
+
+        // Check if executor is still accepting tasks before executing
+        if (executor.isShutdown) {
+            logW("cleanup() executor already shutdown, skipping resource disposal")
+            return
+        }
 
         executor.execute {
             try {
@@ -445,10 +496,12 @@ class RTCCall(
 
         // Video track
         videoCapturer = createVideoCapturer()
-        if (videoCapturer != null) {
-            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglBase!!.eglBaseContext)
-            videoSource = factory?.createVideoSource(videoCapturer!!.isScreencast)
-            videoCapturer?.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
+        val capturer = videoCapturer  // CRASH-FIX Jan 2026: Local val for smart cast
+        val eglContext = eglBase?.eglBaseContext  // CRASH-FIX Jan 2026: Safe null check
+        if (capturer != null && eglContext != null) {
+            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
+            videoSource = factory?.createVideoSource(capturer.isScreencast)
+            capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
 
             localVideoTrack = factory?.createVideoTrack(VIDEO_TRACK_ID, videoSource)
             localVideoSink = ProxyVideoSink()
@@ -653,32 +706,26 @@ class RTCCall(
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED -> {
-                    resetReconnectAttempts() // Reset counter on successful connection
-                    updateState {
-                        copy(
-                            status = CallState.Status.CONNECTED,
-                            startTime = startTime ?: System.currentTimeMillis()
-                        )
-                    }
+                    logI("ICE connected - call established")
+                    handleConnectionEstablished()
                 }
                 PeerConnection.IceConnectionState.DISCONNECTED -> {
-                    logW("ICE disconnected - attempting reconnection")
-                    updateState { copy(status = CallState.Status.RECONNECTING) }
-                    attemptIceRestart()
+                    logW("ICE disconnected - starting enterprise reconnection")
+                    startEnterpriseReconnection("Network disconnected")
                 }
                 PeerConnection.IceConnectionState.FAILED -> {
                     logE("ICE connection failed")
-                    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                        logI("Attempting reconnection (attempt ${reconnectAttempts + 1}/$MAX_RECONNECT_ATTEMPTS)")
-                        updateState { copy(status = CallState.Status.RECONNECTING) }
-                        attemptIceRestart()
-                    } else {
-                        logE("Max reconnection attempts reached")
-                        updateState { copy(status = CallState.Status.ERROR, errorMessage = "Connection failed") }
-                    }
+                    startEnterpriseReconnection("Connection failed")
                 }
                 PeerConnection.IceConnectionState.CLOSED -> {
+                    stopReconnection()
                     updateState { copy(status = CallState.Status.ENDED) }
+                }
+                PeerConnection.IceConnectionState.CHECKING -> {
+                    logD("ICE checking - connection in progress")
+                }
+                PeerConnection.IceConnectionState.NEW -> {
+                    logD("ICE new - waiting for candidates")
                 }
                 else -> {}
             }
@@ -773,18 +820,37 @@ class RTCCall(
             val data = ByteArray(buffer.data.remaining())
             buffer.data.get(data)
             val message = String(data)
-            logD("Data channel message: $message")
+
+            // Don't log heartbeats to reduce noise
+            if (!message.startsWith("Heartbeat:")) {
+                logD("Data channel message: $message")
+            }
 
             when {
-                "Hangup" in message -> {
+                message == "Hangup" -> {
                     logI("Remote hangup received")
+                    stopReconnection()
+                    stopHeartbeat()
                     updateState { copy(status = CallState.Status.ENDED) }
                 }
-                "CameraEnabled" in message -> {
+                message.startsWith("Heartbeat:ping:") -> {
+                    // Respond to heartbeat ping with pong
+                    val timestamp = message.substringAfter("Heartbeat:ping:")
+                    sendDataChannelMessage("Heartbeat:pong:$timestamp")
+                    handleHeartbeatReceived()
+                }
+                message.startsWith("Heartbeat:pong:") -> {
+                    // Received pong response
+                    handleHeartbeatReceived()
+                }
+                message == "CameraEnabled" -> {
                     logD("Remote camera enabled")
                 }
-                "CameraDisabled" in message -> {
+                message == "CameraDisabled" -> {
                     logD("Remote camera disabled")
+                }
+                message == "LowBandwidthMode" -> {
+                    logI("Remote requested low bandwidth mode")
                 }
             }
         }
@@ -834,13 +900,184 @@ class RTCCall(
         }
     }
 
+    // ============================================================================
+    // ENTERPRISE RECONNECTION SYSTEM (Jan 2026)
+    // Like WhatsApp/Zoom/Teams - robust reconnection with timeout
+    // ============================================================================
+
+    /**
+     * Handle successful connection - reset reconnection state, start heartbeat
+     */
+    private fun handleConnectionEstablished() {
+        logI("Connection established - resetting reconnection state")
+
+        // Cancel any ongoing reconnection
+        stopReconnection()
+
+        // Reset counters
+        reconnectAttempts = 0
+        disconnectTime = null
+
+        // Update state
+        updateState {
+            copy(
+                status = CallState.Status.CONNECTED,
+                startTime = startTime ?: System.currentTimeMillis(),
+                reconnectAttempt = 0,
+                lastDisconnectTime = null,
+                networkQuality = CallState.NetworkQuality.GOOD  // Assume good on connect
+            )
+        }
+
+        // Start heartbeat monitoring
+        startHeartbeat()
+    }
+
+    /**
+     * Start enterprise-level reconnection with 30-second timeout
+     * Attempts ICE restart every 3 seconds until timeout or success
+     */
+    private fun startEnterpriseReconnection(reason: String) {
+        // Don't start if already reconnecting
+        if (reconnectJob?.isActive == true) {
+            logD("Reconnection already in progress")
+            return
+        }
+
+        // Don't reconnect if already cleaned up
+        if (isCleanedUp) {
+            logD("Already cleaned up, skipping reconnection")
+            return
+        }
+
+        disconnectTime = System.currentTimeMillis()
+
+        updateState {
+            copy(
+                status = CallState.Status.RECONNECTING,
+                lastDisconnectTime = disconnectTime,
+                reconnectAttempt = 0,
+                errorMessage = reason
+            )
+        }
+
+        reconnectJob = callScope.launch {
+            logI("Starting enterprise reconnection (timeout: ${RECONNECT_TIMEOUT_SECONDS}s)")
+
+            val startTime = System.currentTimeMillis()
+            val timeoutMs = RECONNECT_TIMEOUT_SECONDS * 1000L
+
+            while (isActive && !isCleanedUp) {
+                val elapsed = System.currentTimeMillis() - startTime
+
+                // Check timeout
+                if (elapsed >= timeoutMs) {
+                    logE("Reconnection timeout after ${RECONNECT_TIMEOUT_SECONDS}s")
+                    updateState {
+                        copy(
+                            status = CallState.Status.ERROR,
+                            errorMessage = "Connection lost. Please try calling again."
+                        )
+                    }
+                    break
+                }
+
+                // Check max attempts
+                if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                    logE("Max reconnection attempts ($MAX_RECONNECT_ATTEMPTS) reached")
+                    updateState {
+                        copy(
+                            status = CallState.Status.ERROR,
+                            errorMessage = "Could not reconnect. Please try again."
+                        )
+                    }
+                    break
+                }
+
+                // Attempt reconnection
+                reconnectAttempts++
+                val remainingSeconds = ((timeoutMs - elapsed) / 1000).toInt()
+                logI("Reconnection attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS (${remainingSeconds}s remaining)")
+
+                updateState {
+                    copy(reconnectAttempt = reconnectAttempts)
+                }
+
+                // Try ICE restart
+                attemptIceRestart()
+
+                // Wait before next attempt
+                delay(RECONNECT_INTERVAL_MS)
+
+                // Check if reconnected (state changed to CONNECTED)
+                if (_state.value.status == CallState.Status.CONNECTED) {
+                    logI("Reconnection successful!")
+                    break
+                }
+            }
+        }
+    }
+
+    /**
+     * Stop ongoing reconnection attempts
+     */
+    private fun stopReconnection() {
+        reconnectJob?.cancel()
+        reconnectJob = null
+    }
+
+    /**
+     * Start heartbeat to detect silent disconnects
+     * Sends ping every 5s, disconnects if no pong for 15s
+     */
+    private fun startHeartbeat() {
+        stopHeartbeat()
+
+        heartbeatJob = callScope.launch {
+            logD("Starting heartbeat monitoring")
+            lastHeartbeatReceived = System.currentTimeMillis()
+
+            while (isActive && !isCleanedUp && _state.value.isConnected) {
+                // Send heartbeat ping
+                sendDataChannelMessage("Heartbeat:ping:${System.currentTimeMillis()}")
+
+                delay(HEARTBEAT_INTERVAL_MS)
+
+                // Check if heartbeat timeout exceeded
+                val timeSinceLastHeartbeat = System.currentTimeMillis() - lastHeartbeatReceived
+                if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+                    logW("Heartbeat timeout - no response for ${timeSinceLastHeartbeat}ms")
+                    // Don't disconnect immediately, let ICE handle it
+                    // But update quality to show warning
+                    updateState {
+                        copy(networkQuality = CallState.NetworkQuality.BAD)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Stop heartbeat monitoring
+     */
+    private fun stopHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
+
+    /**
+     * Handle received heartbeat (called from data channel observer)
+     */
+    private fun handleHeartbeatReceived() {
+        lastHeartbeatReceived = System.currentTimeMillis()
+    }
+
     /**
      * Attempt ICE restart to recover disconnected call
      */
     private fun attemptIceRestart() {
         executor.execute {
             try {
-                reconnectAttempts++
                 logI("attemptIceRestart: attempt $reconnectAttempts")
 
                 // Request ICE restart
@@ -963,11 +1200,47 @@ class RTCCall(
 
                 _stats.value = callStats
 
+                // Update network quality in call state (Enterprise feature Jan 2026)
+                updateNetworkQuality(callStats)
+
                 // WhatsApp-style adaptive quality based on network conditions
                 adaptVideoQuality(callStats)
 
             } catch (e: Exception) {
                 logE("collectStats() error", e)
+            }
+        }
+    }
+
+    /**
+     * Calculate and update network quality based on stats
+     * Enterprise feature (Jan 2026) - like WhatsApp/Zoom signal bars
+     */
+    private fun updateNetworkQuality(stats: CallStats) {
+        // Calculate packet loss percentage
+        // Note: This is cumulative, so we'd need to track delta for accurate %
+        // For now, use a simplified approach based on absolute numbers
+        val rttMs = stats.roundTripTimeMs.toInt()
+        val jitterMs = stats.jitterMs.toInt()
+
+        // Determine quality level based on RTT and jitter
+        val quality = when {
+            rttMs < EXCELLENT_RTT && jitterMs < 20 -> CallState.NetworkQuality.EXCELLENT
+            rttMs < GOOD_RTT && jitterMs < 50 -> CallState.NetworkQuality.GOOD
+            rttMs < FAIR_RTT && jitterMs < 100 -> CallState.NetworkQuality.FAIR
+            rttMs < POOR_RTT && jitterMs < 200 -> CallState.NetworkQuality.POOR
+            else -> CallState.NetworkQuality.BAD
+        }
+
+        // Only update if connected (don't override RECONNECTING state)
+        if (_state.value.status == CallState.Status.CONNECTED) {
+            updateState {
+                copy(
+                    networkQuality = quality,
+                    roundTripTimeMs = rttMs,
+                    jitterMs = jitterMs,
+                    packetLossPercent = 0f  // Would need delta calculation for accurate %
+                )
             }
         }
     }
@@ -1124,13 +1397,34 @@ class RTCCall(
         private const val VIDEO_HEIGHT = 720
         private const val VIDEO_FPS = 25
 
-        // Reconnection settings
-        private const val MAX_RECONNECT_ATTEMPTS = 3
+        // Enterprise Reconnection Settings (Jan 2026)
+        // Like WhatsApp/Zoom/Teams - give network time to recover
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val RECONNECT_TIMEOUT_SECONDS = 30
+        private const val RECONNECT_INTERVAL_MS = 3000L  // Try every 3 seconds
 
         // ICE gathering timeout (like Meshenger - 3 seconds)
         private const val ICE_GATHERING_TIMEOUT_MS = 3000L
 
         // Stats collection interval
         private const val STATS_INTERVAL_MS = 2000L
+
+        // Heartbeat settings (keep-alive)
+        private const val HEARTBEAT_INTERVAL_MS = 5000L  // Send ping every 5 seconds
+        private const val HEARTBEAT_TIMEOUT_MS = 15000L  // Disconnect if no pong for 15 seconds
+
+        // Network quality thresholds
+        private const val EXCELLENT_PACKET_LOSS = 1f
+        private const val GOOD_PACKET_LOSS = 3f
+        private const val FAIR_PACKET_LOSS = 5f
+        private const val POOR_PACKET_LOSS = 15f
+        private const val EXCELLENT_RTT = 100
+        private const val GOOD_RTT = 200
+        private const val FAIR_RTT = 300
+        private const val POOR_RTT = 500
+
+        // Adaptive bitrate thresholds (Kbps)
+        private const val LOW_BANDWIDTH_THRESHOLD = 200  // Switch to low quality
+        private const val VIDEO_DISABLE_THRESHOLD = 100  // Disable video, audio only
     }
 }

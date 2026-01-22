@@ -93,6 +93,7 @@ class CallActivity : ComponentActivity() {
         }
 
         val isOutgoing = intent.getBooleanExtra(EXTRA_IS_OUTGOING, true)
+        val isVideoCall = intent.getBooleanExtra(EXTRA_IS_VIDEO_CALL, false)
         val contactId = intent.getStringExtra(EXTRA_CONTACT_ID)
         val remoteAddress = intent.getStringExtra(EXTRA_REMOTE_ADDRESS)
         val offer = intent.getStringExtra(EXTRA_OFFER)
@@ -109,11 +110,17 @@ class CallActivity : ComponentActivity() {
             logD("Retrieved signaling socket for incoming call: ${signalingSocket != null}")
         }
 
-        logI("CallActivity onCreate: isOutgoing=$isOutgoing contactId=$contactId")
+        logI("CallActivity onCreate: isOutgoing=$isOutgoing isVideoCall=$isVideoCall contactId=$contactId")
 
         // Initialize WebRTC
         rtcCall = RTCCall(this, isOutgoing).apply {
             initialize()
+
+            // FIXED Jan 2026: Auto-enable camera for video calls
+            if (isVideoCall) {
+                setCameraEnabled(true)
+                logI("Video call: camera auto-enabled")
+            }
 
             // Set up SDP callback for signaling
             onLocalDescription = { sdp ->
@@ -196,10 +203,19 @@ class CallActivity : ComponentActivity() {
                     }
                 )
 
-                // Handle call ended
+                // Handle call ended or error
+                // FIXED Jan 2026: Also handle ERROR status to properly close activity
                 LaunchedEffect(callState.status) {
-                    if (callState.status == CallState.Status.ENDED) {
-                        finish()
+                    when (callState.status) {
+                        CallState.Status.ENDED -> {
+                            finish()
+                        }
+                        CallState.Status.ERROR -> {
+                            // Error is shown in UI, activity will be finished by handleCallError()
+                            // after a delay to let user see the error message
+                            logD("Call error state: ${callState.errorMessage}")
+                        }
+                        else -> { /* Continue with call */ }
                     }
                 }
             }
@@ -213,10 +229,12 @@ class CallActivity : ComponentActivity() {
 
     /**
      * Send SDP offer to contact via mesh network
+     * FIXED Jan 2026: Proper error handling to prevent crashes
      */
     private suspend fun sendOfferToContact(contactId: String?, offerSdp: String) {
         if (contactId == null) {
             logE("sendOfferToContact: contactId is null")
+            handleCallError("Invalid contact")
             return
         }
 
@@ -224,25 +242,51 @@ class CallActivity : ComponentActivity() {
         val contact = contactRepository.getContactByDeviceId(contactId)
         if (contact == null) {
             logE("sendOfferToContact: contact not found for $contactId")
+            handleCallError("Contact not found")
             return
         }
 
-        logD("sendOfferToContact: initiating call to ${contact.name}")
+        // FIXED Jan 2026: Debug logging for connection issues
+        logI("sendOfferToContact: initiating call to ${contact.name}")
+        logI("sendOfferToContact: contact addresses = ${contact.addresses}")
+        logI("sendOfferToContact: lastWorkingAddress = ${contact.lastWorkingAddress}")
 
-        when (val result = meshNetworkManager.initiateCall(contact, offerSdp)) {
-            is MeshNetworkManager.CallResult.Connected -> {
-                logI("sendOfferToContact: call connected, received answer")
-                signalingSocket = result.socket
-                rtcCall?.handleAnswer(result.answer)
+        try {
+            when (val result = meshNetworkManager.initiateCall(contact, offerSdp)) {
+                is MeshNetworkManager.CallResult.Connected -> {
+                    logI("sendOfferToContact: call connected, received answer")
+                    signalingSocket = result.socket
+                    rtcCall?.handleAnswer(result.answer)
+                }
+                is MeshNetworkManager.CallResult.Declined -> {
+                    logI("sendOfferToContact: call declined")
+                    handleCallError("Call declined")
+                }
+                is MeshNetworkManager.CallResult.Error -> {
+                    logE("sendOfferToContact: error - ${result.message}")
+                    handleCallError(result.message)
+                }
             }
-            is MeshNetworkManager.CallResult.Declined -> {
-                logI("sendOfferToContact: call declined")
-                rtcCall?.hangup()
-            }
-            is MeshNetworkManager.CallResult.Error -> {
-                logE("sendOfferToContact: error - ${result.message}")
-                rtcCall?.hangup()
-            }
+        } catch (e: Exception) {
+            logE("sendOfferToContact: exception", e)
+            handleCallError("Connection failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Handle call error - update state and finish activity
+     * FIXED Jan 2026: Ensures proper cleanup without crashing
+     */
+    private fun handleCallError(errorMessage: String) {
+        logE("handleCallError: $errorMessage")
+        runOnUiThread {
+            // Update state to show error briefly, then finish
+            rtcCall?.setError(errorMessage)
+            // Give UI time to show error message before finishing
+            window.decorView.postDelayed({
+                rtcCall?.cleanup()
+                finish()
+            }, 2000) // Show error for 2 seconds
         }
     }
 
@@ -317,6 +361,7 @@ class CallActivity : ComponentActivity() {
     companion object {
         const val EXTRA_CONTACT_ID = "contact_id"
         const val EXTRA_IS_OUTGOING = "is_outgoing"
+        const val EXTRA_IS_VIDEO_CALL = "is_video_call"
         const val EXTRA_REMOTE_ADDRESS = "remote_address"
         const val EXTRA_OFFER = "offer"
         const val EXTRA_SENDER_KEY = "sender_key"
@@ -620,12 +665,26 @@ private fun CallContent(
 
 /**
  * Call status text with styling
+ * UPDATED Jan 2026: Enterprise reconnection info with countdown
  */
 @Composable
 private fun CallStatusText(
     callState: CallState,
     isOutgoing: Boolean
 ) {
+    // For reconnecting state, show countdown timer
+    var reconnectSecondsRemaining by remember { mutableStateOf(callState.reconnectSecondsRemaining) }
+
+    // Update countdown every second when reconnecting
+    LaunchedEffect(callState.isReconnecting) {
+        if (callState.isReconnecting) {
+            while (true) {
+                reconnectSecondsRemaining = callState.reconnectSecondsRemaining
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
     val (statusText, statusColor) = when (callState.status) {
         CallState.Status.IDLE -> {
             if (isOutgoing) "Calling..." to PremiumColors.TextSecondary
@@ -635,17 +694,92 @@ private fun CallStatusText(
         CallState.Status.RINGING -> "Ringing..." to PremiumColors.ElectricCyan
         CallState.Status.CONNECTING -> "Establishing connection..." to PremiumColors.ConnectingAmber
         CallState.Status.CONNECTED -> "Connected" to PremiumColors.OnlineGlow
-        CallState.Status.RECONNECTING -> "Reconnecting..." to PremiumColors.ConnectingAmber
+        CallState.Status.RECONNECTING -> {
+            val attemptText = if (callState.reconnectAttempt > 0) {
+                " (Attempt ${callState.reconnectAttempt}/${callState.maxReconnectAttempts})"
+            } else ""
+            "Reconnecting...$attemptText" to PremiumColors.ConnectingAmber
+        }
         CallState.Status.ENDED -> "Call Ended" to PremiumColors.TextSecondary
         CallState.Status.ERROR -> (callState.errorMessage ?: "Error") to PremiumColors.BusyRed
     }
 
-    Text(
-        text = statusText,
-        style = MaterialTheme.typography.titleMedium,
-        color = statusColor,
-        fontWeight = FontWeight.Medium
-    )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Main status text
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.titleMedium,
+            color = statusColor,
+            fontWeight = FontWeight.Medium
+        )
+
+        // Show countdown when reconnecting (Enterprise feature Jan 2026)
+        if (callState.isReconnecting && reconnectSecondsRemaining > 0) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Call will end in ${reconnectSecondsRemaining}s",
+                style = MaterialTheme.typography.bodySmall,
+                color = PremiumColors.TextSecondary
+            )
+        }
+
+        // Show network quality indicator when connected (like WhatsApp signal bars)
+        if (callState.isConnected) {
+            Spacer(modifier = Modifier.height(8.dp))
+            NetworkQualityIndicator(quality = callState.networkQuality)
+        }
+
+        // Show poor connection warning
+        if (callState.shouldShowPoorConnectionWarning && callState.isConnected) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Poor connection",
+                style = MaterialTheme.typography.bodySmall,
+                color = PremiumColors.ConnectingAmber
+            )
+        }
+    }
+}
+
+/**
+ * Network quality indicator with signal bars (like WhatsApp/Zoom)
+ * Enterprise feature Jan 2026
+ */
+@Composable
+private fun NetworkQualityIndicator(quality: CallState.NetworkQuality) {
+    val bars = when (quality) {
+        CallState.NetworkQuality.EXCELLENT -> 4
+        CallState.NetworkQuality.GOOD -> 3
+        CallState.NetworkQuality.FAIR -> 2
+        CallState.NetworkQuality.POOR -> 1
+        CallState.NetworkQuality.BAD, CallState.NetworkQuality.UNKNOWN -> 0
+    }
+
+    val color = when (quality) {
+        CallState.NetworkQuality.EXCELLENT, CallState.NetworkQuality.GOOD -> PremiumColors.OnlineGlow
+        CallState.NetworkQuality.FAIR -> PremiumColors.ConnectingAmber
+        CallState.NetworkQuality.POOR, CallState.NetworkQuality.BAD -> PremiumColors.BusyRed
+        CallState.NetworkQuality.UNKNOWN -> PremiumColors.TextSecondary
+    }
+
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        repeat(4) { index ->
+            val barHeight = (8 + index * 4).dp
+            val isActive = index < bars
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(barHeight)
+                    .background(
+                        color = if (isActive) color else color.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
+        }
+    }
 }
 
 /**

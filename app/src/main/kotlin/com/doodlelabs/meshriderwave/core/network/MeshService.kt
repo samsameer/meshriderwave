@@ -1,6 +1,15 @@
 /*
  * Mesh Rider Wave - Foreground Mesh Service
  * Copyright (C) 2024-2026 Jabbir Basha P. All Rights Reserved.
+ *
+ * Military-Grade Discovery Service (Jan 2026)
+ *
+ * Starts and manages all discovery components:
+ * - MeshNetworkManager: P2P signaling (TCP)
+ * - PeerDiscoveryManager: mDNS/DNS-SD discovery (link-local)
+ * - BeaconManager: Multicast beacon discovery (mesh-wide)
+ * - ContactAddressSync: Address synchronization
+ * - NetworkTypeDetector: Network type monitoring
  */
 
 package com.doodlelabs.meshriderwave.core.network
@@ -17,6 +26,8 @@ import androidx.core.app.NotificationCompat
 import com.doodlelabs.meshriderwave.BuildConfig
 import com.doodlelabs.meshriderwave.MeshRiderApp
 import com.doodlelabs.meshriderwave.R
+import com.doodlelabs.meshriderwave.core.discovery.BeaconManager
+import com.doodlelabs.meshriderwave.core.discovery.ContactAddressSync
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
@@ -27,6 +38,7 @@ import com.doodlelabs.meshriderwave.presentation.MainActivity
 import com.doodlelabs.meshriderwave.presentation.ui.screens.call.CallActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
@@ -38,6 +50,15 @@ class MeshService : Service() {
 
     @Inject
     lateinit var peerDiscoveryManager: PeerDiscoveryManager
+
+    @Inject
+    lateinit var beaconManager: BeaconManager
+
+    @Inject
+    lateinit var contactAddressSync: ContactAddressSync
+
+    @Inject
+    lateinit var networkTypeDetector: NetworkTypeDetector
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
@@ -167,9 +188,23 @@ class MeshService : Service() {
 
     private fun startListening() {
         logI("startListening()")
+
+        // Start P2P signaling server
         meshNetworkManager.start()
 
-        // Start peer discovery (mDNS)
+        // Start network type detection
+        networkTypeDetector.start()
+        logI("NetworkTypeDetector started")
+
+        // Start contact address synchronization
+        contactAddressSync.start()
+        logI("ContactAddressSync started")
+
+        // Start multicast beacon discovery
+        beaconManager.start()
+        logI("BeaconManager started")
+
+        // Start mDNS peer discovery
         scope.launch {
             try {
                 val keyPair = settingsRepository.getOrCreateKeyPair()
@@ -194,23 +229,28 @@ class MeshService : Service() {
             }
         }
 
-        // Observe discovered peers and update contact lastSeenAt + notification
+        // Combine mDNS and beacon discoveries for unified peer count
+        // Military-grade Jan 2026: Multi-source peer discovery
         scope.launch {
-            peerDiscoveryManager.discoveredPeers.collect { peers ->
-                logD("Discovered ${peers.size} peers")
+            combine(
+                peerDiscoveryManager.discoveredPeers,
+                beaconManager.discoveredPeersFlow
+            ) { mdnsPeers, beaconPeers ->
+                // Merge peers, deduplicate by public key
+                val allPeers = mutableMapOf<String, Any>()
+                mdnsPeers.forEach { (key, _) -> allPeers[key] = Unit }
+                beaconPeers.forEach { (key, _) -> allPeers[key] = Unit }
+                allPeers.size to (mdnsPeers.values.toList() to beaconPeers.values.toList())
+            }.collect { (totalPeers, peers) ->
+                val (mdnsPeers, _) = peers
+                logD("Total peers: $totalPeers (mDNS: ${mdnsPeers.size})")
 
-                // Update notification with peer count
-                updateNotification(peers.size)
+                // Update notification with combined peer count
+                updateNotification(totalPeers)
 
-                peers.values.forEach { peer ->
+                // Register mDNS peer addresses with PTTManager
+                mdnsPeers.forEach { peer ->
                     try {
-                        // Update lastSeenAt for matching contacts
-                        contactRepository.updateLastSeen(
-                            publicKey = peer.publicKey,
-                            address = peer.primaryAddress
-                        )
-
-                        // Register peer addresses with PTTManager for broadcast delivery
                         peer.primaryAddress?.let { address ->
                             pttManager.registerMemberAddress(
                                 peer.publicKey,
@@ -218,8 +258,22 @@ class MeshService : Service() {
                             )
                         }
                     } catch (e: Exception) {
-                        // Contact may not exist, that's ok
+                        // Peer may not be in a PTT channel
                     }
+                }
+            }
+        }
+
+        // Register beacon peer addresses with PTTManager
+        scope.launch {
+            beaconManager.peerDiscoveredEvent.collect { peer ->
+                try {
+                    pttManager.registerMemberAddress(
+                        peer.publicKey,
+                        listOf(peer.address)
+                    )
+                } catch (e: Exception) {
+                    // Peer may not be in a PTT channel
                 }
             }
         }
@@ -301,8 +355,22 @@ class MeshService : Service() {
 
     private fun stopListening() {
         logI("stopListening()")
-        meshNetworkManager.stop()
+
+        // Stop all discovery components in reverse order
+        contactAddressSync.stop()
+        logI("ContactAddressSync stopped")
+
+        beaconManager.stop()
+        logI("BeaconManager stopped")
+
+        networkTypeDetector.stop()
+        logI("NetworkTypeDetector stopped")
+
         peerDiscoveryManager.stop()
+        logI("PeerDiscoveryManager stopped")
+
+        meshNetworkManager.stop()
+        logI("MeshNetworkManager stopped")
     }
 
     private fun handleIncomingCall(call: MeshNetworkManager.IncomingCall) {

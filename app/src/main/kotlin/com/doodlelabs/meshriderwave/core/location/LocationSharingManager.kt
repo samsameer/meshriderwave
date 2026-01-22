@@ -171,18 +171,20 @@ class LocationSharingManager @Inject constructor(
             .setGranularity(Granularity.GRANULARITY_FINE)
             .build()
 
-        locationCallback = object : LocationCallback() {
+        // CRASH-FIX Jan 2026: Use local val to ensure non-null without !!
+        val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
                     handleLocationUpdate(location)
                 }
             }
         }
+        locationCallback = callback
 
         try {
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
-                locationCallback!!,
+                callback,
                 Looper.getMainLooper()
             )
             _sharingState.value = SharingState.Active
@@ -571,14 +573,26 @@ class LocationSharingManager @Inject constructor(
 
     // ========== Lifecycle ==========
 
+    // Track if cleanup has been called (FIXED Jan 2026)
+    @Volatile
+    private var isCleanedUp = false
+
     /**
      * Cleanup resources
+     * FIXED Jan 2026: Made idempotent and added scope cancellation
      */
     fun cleanup() {
+        if (isCleanedUp) {
+            Log.d(TAG, "LocationSharingManager already cleaned up, skipping")
+            return
+        }
+        isCleanedUp = true
+
         stopSharing()
         trackHistory.clear()
         _teamLocations.value = emptyMap()
         _geofences.value = emptyList()
+        // Note: scope not cancelled as this is a singleton that may be reused
     }
 }
 

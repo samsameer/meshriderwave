@@ -133,7 +133,8 @@ fun ContactDetailScreen(
                     }
                 }
                 else -> {
-                    val contact = uiState.contact!!
+                    // CRASH-FIX Jan 2026: Safe null check - shouldn't be null here but compiler can't verify
+                    val contact = uiState.contact ?: return@Scaffold
 
                     Column(
                         modifier = Modifier

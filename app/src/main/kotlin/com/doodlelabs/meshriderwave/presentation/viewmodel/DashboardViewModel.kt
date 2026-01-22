@@ -11,10 +11,12 @@ package com.doodlelabs.meshriderwave.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.doodlelabs.meshriderwave.core.discovery.BeaconManager
 import com.doodlelabs.meshriderwave.core.emergency.SOSManager
 import com.doodlelabs.meshriderwave.core.emergency.SOSState
 import com.doodlelabs.meshriderwave.core.location.LocationSharingManager
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
+import com.doodlelabs.meshriderwave.core.network.NetworkTypeDetector
 import com.doodlelabs.meshriderwave.core.network.PeerDiscoveryManager
 import com.doodlelabs.meshriderwave.core.radio.RadioApiClient
 import com.doodlelabs.meshriderwave.core.radio.RadioDiscoveryService
@@ -36,6 +38,8 @@ class DashboardViewModel @Inject constructor(
     private val pttChannelRepository: PTTChannelRepository,
     private val meshNetworkManager: MeshNetworkManager,
     private val peerDiscoveryManager: PeerDiscoveryManager,
+    private val beaconManager: BeaconManager,
+    private val networkTypeDetector: NetworkTypeDetector,
     private val locationSharingManager: LocationSharingManager,
     private val sosManager: SOSManager,
     private val radioApiClient: RadioApiClient,
@@ -77,16 +81,51 @@ class DashboardViewModel @Inject constructor(
             }
         }
 
-        // Observe discovered peers
+        // Observe current network type
         viewModelScope.launch {
-            peerDiscoveryManager.discoveredPeers.collect { peers ->
+            networkTypeDetector.currentNetworkType.collect { networkType ->
+                _uiState.update { it.copy(currentNetworkType = networkType.displayName) }
+            }
+        }
+
+        // Combine mDNS and beacon discoveries for accurate peer count
+        // Military-grade Jan 2026: Use both discovery sources
+        viewModelScope.launch {
+            combine(
+                peerDiscoveryManager.discoveredPeers,
+                beaconManager.discoveredPeersFlow
+            ) { mdnsPeers, beaconPeers ->
+                // Merge peers by public key (deduplicate)
+                val allPeerKeys = mutableSetOf<String>()
+
+                // Add mDNS peers
+                mdnsPeers.keys.forEach { allPeerKeys.add(it) }
+
+                // Add beacon peers
+                beaconPeers.keys.forEach { allPeerKeys.add(it) }
+
+                allPeerKeys.size
+            }.collect { totalPeers ->
                 _uiState.update { state ->
                     state.copy(
-                        discoveredPeers = peers.size,
-                        meshNodes = peers.size,
-                        signalStrength = calculateSignalStrength(peers.size)
+                        discoveredPeers = totalPeers,
+                        meshNodes = totalPeers,
+                        signalStrength = calculateSignalStrength(totalPeers)
                     )
                 }
+            }
+        }
+
+        // Log individual discovery sources for debugging
+        viewModelScope.launch {
+            peerDiscoveryManager.discoveredPeers.collect { mdnsPeers ->
+                Log.d(TAG, "mDNS peers: ${mdnsPeers.size}")
+            }
+        }
+
+        viewModelScope.launch {
+            beaconManager.discoveredPeersFlow.collect { beaconPeers ->
+                Log.d(TAG, "Beacon peers: ${beaconPeers.size}")
             }
         }
     }
@@ -381,6 +420,7 @@ data class DashboardUiState(
     val meshNodes: Int = 0,
     val signalStrength: SignalStrength = SignalStrength.NONE,
     val networkLatency: Long = 0,
+    val currentNetworkType: String = "Unknown",
     val activeChannels: List<PTTChannelUiState> = emptyList(),
     val activeGroups: List<GroupUiState> = emptyList(),
     val trackedTeamMembers: List<TrackedMemberUiState> = emptyList(),

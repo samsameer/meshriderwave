@@ -597,16 +597,29 @@ class SOSManager @Inject constructor(
 
     // ========== Cleanup ==========
 
+    // Track if cleanup has been called (FIXED Jan 2026)
+    @Volatile
+    private var isCleanedUp = false
+
     /**
      * Stop all SOS operations
+     * FIXED Jan 2026: Made idempotent to prevent double cleanup issues
      */
     fun cleanup() {
+        if (isCleanedUp) {
+            Log.d(TAG, "SOSManager already cleaned up, skipping")
+            return
+        }
+        isCleanedUp = true
+
         beaconJob?.cancel()
         audioRecordJob?.cancel()
         beaconJob = null
         audioRecordJob = null
         _sosState.value = SOSState.Inactive
         _activeAlerts.value = emptyList()
+        currentAlertId = null
+        // Note: scope not cancelled as this is a singleton that may be reused
     }
 
     // ========== Helpers ==========

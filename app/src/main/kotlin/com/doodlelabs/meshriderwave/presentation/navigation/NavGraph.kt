@@ -48,7 +48,8 @@ sealed class Screen(val route: String) {
 @Composable
 fun MeshRiderNavGraph(
     navController: NavHostController,
-    onStartCall: (String) -> Unit
+    onStartCall: (String) -> Unit,
+    onStartVideoCall: (String) -> Unit = onStartCall  // Default to same handler for backwards compatibility
 ) {
     NavHost(
         navController = navController,
@@ -83,6 +84,7 @@ fun MeshRiderNavGraph(
                 onNavigateToQRShow = { navController.navigate(Screen.QRShow.route) },
                 onNavigateToQRScan = { navController.navigate(Screen.QRScan.route) },
                 onStartCall = onStartCall,
+                onStartVideoCall = onStartVideoCall,
                 onContactClick = { publicKeyHex ->
                     navController.navigate(Screen.ContactDetail.createRoute(publicKeyHex))
                 }
@@ -150,7 +152,7 @@ fun MeshRiderNavGraph(
                 publicKeyHex = publicKey,
                 onNavigateBack = { navController.popBackStack() },
                 onStartCall = onStartCall,
-                onStartVideoCall = onStartCall
+                onStartVideoCall = onStartVideoCall
             )
         }
 

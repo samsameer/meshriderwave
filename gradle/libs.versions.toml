@@ -1,6 +1,6 @@
 [versions]
 # Core Android - Jan 2026 Latest
-agp = "8.7.3"
+agp = "8.13.2"
 kotlin = "2.1.0"
 ksp = "2.1.0-1.0.29"
 

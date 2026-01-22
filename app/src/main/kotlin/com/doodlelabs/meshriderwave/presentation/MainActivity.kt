@@ -64,7 +64,10 @@ class MainActivity : ComponentActivity() {
                     MeshRiderNavGraph(
                         navController = navController,
                         onStartCall = { contactId ->
-                            startCallActivity(contactId)
+                            startCallActivity(contactId, isVideoCall = false)
+                        },
+                        onStartVideoCall = { contactId ->
+                            startCallActivity(contactId, isVideoCall = true)
                         }
                     )
                 }
@@ -106,12 +109,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startCallActivity(contactId: String) {
+    private fun startCallActivity(contactId: String, isVideoCall: Boolean = false) {
         val intent = Intent(this, CallActivity::class.java).apply {
             putExtra(CallActivity.EXTRA_CONTACT_ID, contactId)
             putExtra(CallActivity.EXTRA_IS_OUTGOING, true)
+            putExtra(CallActivity.EXTRA_IS_VIDEO_CALL, isVideoCall)
         }
         startActivity(intent)
+    }
+
+    private fun startVideoCallActivity(contactId: String) {
+        startCallActivity(contactId, isVideoCall = true)
     }
 
     override fun onDestroy() {

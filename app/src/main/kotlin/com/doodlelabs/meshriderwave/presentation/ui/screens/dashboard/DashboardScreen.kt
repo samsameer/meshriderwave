@@ -405,29 +405,6 @@ private fun NetworkStatusHero(
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Encryption badge
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(PremiumColors.GlassWhite)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                Icons.Default.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(12.dp),
-                tint = PremiumColors.LaserLime
-            )
-            Text(
-                text = "E2E Encrypted • MLS",
-                style = MaterialTheme.typography.labelSmall,
-                color = PremiumColors.TextSecondary
-            )
-        }
     }
 }
 

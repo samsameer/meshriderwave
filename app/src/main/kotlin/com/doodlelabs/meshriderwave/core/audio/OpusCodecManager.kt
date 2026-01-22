@@ -372,8 +372,10 @@ class OpusCodecManager @Inject constructor() {
                 }
 
                 // Option 2: Fallback codec (ADPCM or G.711)
+                // CRASH-FIX Jan 2026: Use local val for safe smart cast
                 useFallback && fallbackCodec != null -> {
-                    val fallbackFrame = fallbackCodec!!.encode(pcmData)
+                    val codec = fallbackCodec  // Local val for smart cast
+                    val fallbackFrame = codec?.encode(pcmData)
                     if (fallbackFrame != null) {
                         encodedData = fallbackFrame.data
                         isCompressed = encodedData.size < pcmData.size
@@ -489,8 +491,10 @@ class OpusCodecManager @Inject constructor() {
                 }
 
                 // Option 2: Fallback codec decoding
+                // CRASH-FIX Jan 2026: Use local val for safe smart cast
                 useFallback && fallbackCodec != null && isCompressed -> {
-                    decodedData = fallbackCodec!!.decode(encodedData) ?: run {
+                    val codec = fallbackCodec  // Local val for smart cast
+                    decodedData = codec?.decode(encodedData) ?: run {
                         // If decode fails, return silence (PLC)
                         ByteArray(currentConfig.frameSizeBytes)
                     }

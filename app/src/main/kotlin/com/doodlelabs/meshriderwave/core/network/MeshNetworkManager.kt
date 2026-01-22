@@ -83,9 +83,19 @@ class MeshNetworkManager @Inject constructor(
 
                 updateLocalAddresses()
 
+                // FIXED Jan 2026: Periodic address refresh for USB-C ethernet detection
+                launch {
+                    while (isActive) {
+                        kotlinx.coroutines.delay(10_000) // Refresh every 10 seconds
+                        updateLocalAddresses()
+                    }
+                }
+
                 while (isActive) {
                     try {
-                        val socket = serverSocket!!.accept()
+                        // CRASH-FIX Jan 2026: Safe null check instead of !!
+                        val server = serverSocket ?: break
+                        val socket = server.accept()
                         logD("start() incoming connection from ${socket.remoteSocketAddress}")
                         handleIncomingConnection(socket)
                     } catch (e: SocketException) {
@@ -102,14 +112,32 @@ class MeshNetworkManager @Inject constructor(
     }
 
     /**
+     * Manually refresh local addresses
+     * Call this when network configuration changes (e.g., USB-C ethernet connected)
+     */
+    fun refreshAddresses() {
+        scope.launch {
+            updateLocalAddresses()
+        }
+    }
+
+    /**
      * Stop listening
+     * FIXED Jan 2026: Cancel scope to prevent coroutine leaks
      */
     fun stop() {
         logD("stop()")
         serverJob?.cancel()
-        serverSocket?.close()
+        serverJob = null
+        try {
+            serverSocket?.close()
+        } catch (e: Exception) {
+            logE("Error closing server socket", e)
+        }
         serverSocket = null
         _isRunning.value = false
+        // Note: scope is not cancelled here as this is a singleton
+        // and may be restarted. Scope coroutines are cancelled via serverJob.
     }
 
     /**
@@ -352,22 +380,73 @@ class MeshNetworkManager @Inject constructor(
         return data
     }
 
+    /**
+     * Update local addresses - includes all routable private IPs
+     * FIXED Jan 2026: Better support for USB-C Ethernet and mesh networks
+     */
     private fun updateLocalAddresses() {
         val addresses = mutableListOf<String>()
+        val priorityAddresses = mutableListOf<String>()  // Ethernet/mesh first
+
         try {
             for (iface in NetworkInterface.getNetworkInterfaces()) {
                 if (iface.isLoopback || !iface.isUp) continue
+
+                val ifaceName = iface.name.lowercase()
+                val isEthernet = ifaceName.startsWith("eth") ||
+                                 ifaceName.startsWith("usb") ||
+                                 ifaceName.startsWith("enp") ||
+                                 ifaceName.startsWith("rndis")
+                val isMesh = ifaceName.contains("mesh") ||
+                             ifaceName.startsWith("br-") ||
+                             ifaceName.contains("smartradio")
+
+                logD("Interface: ${iface.name} (up=${iface.isUp}, eth=$isEthernet, mesh=$isMesh)")
+
                 for (addr in iface.interfaceAddresses) {
                     val ip = addr.address.hostAddress ?: continue
-                    if (ip.startsWith(BuildConfig.MESH_SUBNET) || ip.startsWith("192.168.")) {
-                        addresses.add(ip)
+                    // Skip IPv6 link-local for now
+                    if (ip.contains(":")) continue
+
+                    // Include all private IP ranges:
+                    // - 10.x.x.x (Class A private, includes MeshRider 10.223.x.x)
+                    // - 172.16-31.x.x (Class B private)
+                    // - 192.168.x.x (Class C private)
+                    val isPrivate = ip.startsWith("10.") ||
+                                   (ip.startsWith("172.") && isClass172Private(ip)) ||
+                                   ip.startsWith("192.168.")
+
+                    if (isPrivate) {
+                        logD("  -> IP: $ip (${iface.name})")
+                        // Prioritize ethernet/mesh interfaces
+                        if (isEthernet || isMesh) {
+                            priorityAddresses.add(ip)
+                        } else {
+                            addresses.add(ip)
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
             logE("updateLocalAddresses() error", e)
         }
-        _localAddresses.value = addresses
+
+        // Ethernet/mesh addresses first, then others
+        val allAddresses = priorityAddresses + addresses
+        logI("Local addresses (priority first): $allAddresses")
+        _localAddresses.value = allAddresses
+    }
+
+    /**
+     * Check if 172.x.x.x address is in private range (172.16.0.0 - 172.31.255.255)
+     */
+    private fun isClass172Private(ip: String): Boolean {
+        return try {
+            val secondOctet = ip.split(".")[1].toInt()
+            secondOctet in 16..31
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**
