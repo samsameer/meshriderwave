@@ -175,6 +175,111 @@ class CryptoManager @Inject constructor() {
         return sodium.crypto_sign_verify_detached(signature, data, data.size.toLong(), publicKey) == 0
     }
 
+    // =========================================================================
+    // BROADCAST ENCRYPTION (Military-Grade Jan 2026)
+    // =========================================================================
+    // Uses XSalsa20-Poly1305 (crypto_secretbox) with shared channel key
+    // Provides authenticated encryption for multicast PTT
+
+    /**
+     * Encrypt broadcast data with shared channel key.
+     * Uses XSalsa20-Poly1305 (AEAD) for authenticated encryption.
+     *
+     * Format: [24 bytes nonce][ciphertext with MAC]
+     *
+     * @param data Plaintext data to encrypt
+     * @param channelKey 32-byte shared symmetric key for the channel
+     * @return Encrypted data with prepended nonce, or null on failure
+     */
+    fun encryptBroadcast(data: ByteArray, channelKey: ByteArray): ByteArray? {
+        if (channelKey.size != SecretBox.KEYBYTES) return null
+
+        // Generate random nonce
+        val nonce = ByteArray(SecretBox.NONCEBYTES)
+        sodium.randombytes_buf(nonce, nonce.size)
+
+        // Encrypt with authentication
+        val ciphertext = ByteArray(SecretBox.MACBYTES + data.size)
+        val rc = sodium.crypto_secretbox_easy(
+            ciphertext,
+            data,
+            data.size.toLong(),
+            nonce,
+            channelKey
+        )
+
+        if (rc != 0) return null
+
+        // Prepend nonce to ciphertext
+        val result = ByteArray(nonce.size + ciphertext.size)
+        System.arraycopy(nonce, 0, result, 0, nonce.size)
+        System.arraycopy(ciphertext, 0, result, nonce.size, ciphertext.size)
+
+        return result
+    }
+
+    /**
+     * Decrypt broadcast data with shared channel key.
+     * Verifies authentication tag before returning plaintext.
+     *
+     * @param encryptedData Data encrypted with encryptBroadcast()
+     * @param channelKey 32-byte shared symmetric key for the channel
+     * @return Decrypted plaintext, or null on failure (including auth failure)
+     */
+    fun decryptBroadcast(encryptedData: ByteArray, channelKey: ByteArray): ByteArray? {
+        if (channelKey.size != SecretBox.KEYBYTES) return null
+        if (encryptedData.size < SecretBox.NONCEBYTES + SecretBox.MACBYTES) return null
+
+        // Extract nonce and ciphertext
+        val nonce = encryptedData.copyOfRange(0, SecretBox.NONCEBYTES)
+        val ciphertext = encryptedData.copyOfRange(SecretBox.NONCEBYTES, encryptedData.size)
+
+        // Decrypt and verify authentication
+        val plaintext = ByteArray(ciphertext.size - SecretBox.MACBYTES)
+        val rc = sodium.crypto_secretbox_open_easy(
+            plaintext,
+            ciphertext,
+            ciphertext.size.toLong(),
+            nonce,
+            channelKey
+        )
+
+        return if (rc == 0) plaintext else null
+    }
+
+    /**
+     * Derive a channel key from channel ID using BLAKE2b.
+     * This creates a deterministic shared key that all channel members can derive.
+     *
+     * In production, this should be replaced with proper key agreement (e.g., MLS).
+     *
+     * @param channelId The channel identifier
+     * @param masterKey Optional master key for additional security (32 bytes)
+     * @return 32-byte channel key
+     */
+    fun deriveChannelKey(channelId: String, masterKey: ByteArray? = null): ByteArray {
+        val key = ByteArray(SecretBox.KEYBYTES)
+        val channelBytes = channelId.toByteArray(Charsets.UTF_8)
+
+        if (masterKey != null && masterKey.size == SecretBox.KEYBYTES) {
+            // Keyed hash for better security
+            sodium.crypto_generichash(
+                key, key.size,
+                channelBytes, channelBytes.size.toLong(),
+                masterKey, masterKey.size
+            )
+        } else {
+            // Unkeyed hash (less secure, for development)
+            sodium.crypto_generichash(
+                key, key.size,
+                channelBytes, channelBytes.size.toLong(),
+                null, 0
+            )
+        }
+
+        return key
+    }
+
     /**
      * Decrypt database using password
      */

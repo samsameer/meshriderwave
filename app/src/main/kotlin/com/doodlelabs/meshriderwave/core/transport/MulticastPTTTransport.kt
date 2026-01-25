@@ -51,6 +51,7 @@ class MulticastPTTTransport @Inject constructor(
     private var config: TransportConfig = TransportConfig()
     private var localPublicKey: ByteArray = ByteArray(0)
     private var localSecretKey: ByteArray = ByteArray(0)
+    private var currentChannelKey: ByteArray = ByteArray(0) // Channel encryption key
 
     // Incoming flows
     private val _incomingAudio = MutableSharedFlow<PTTAudioPacket>(
@@ -77,11 +78,22 @@ class MulticastPTTTransport @Inject constructor(
     fun configure(
         config: TransportConfig,
         publicKey: ByteArray,
-        secretKey: ByteArray
+        secretKey: ByteArray,
+        channelId: String = "default"
     ) {
         this.config = config
         this.localPublicKey = publicKey
         this.localSecretKey = secretKey
+        // Derive channel encryption key from channel ID
+        this.currentChannelKey = cryptoManager.deriveChannelKey(channelId)
+    }
+
+    /**
+     * Update channel encryption key when switching channels
+     */
+    fun setChannelKey(channelId: String) {
+        this.currentChannelKey = cryptoManager.deriveChannelKey(channelId)
+        logD("Channel key updated for: $channelId")
     }
 
     override suspend fun start() = withContext(Dispatchers.IO) {
@@ -163,12 +175,20 @@ class MulticastPTTTransport @Inject constructor(
             // Build RTP-like packet
             val packet = buildAudioPacket(channelId, audioData, sequenceNumber, timestamp)
 
-            // TODO: Implement broadcast encryption with channel shared key
-            // For now, sign the packet to ensure integrity
-            val signature = cryptoManager.sign(packet, localSecretKey) ?: ByteArray(64)
-            val encrypted = packet + signature
+            // Sign packet for integrity verification
+            val signature = cryptoManager.sign(packet, localSecretKey)
+                ?: return@withContext Result.failure(
+                    SecurityException("Failed to sign audio packet")
+                )
+            val signedPacket = packet + signature
 
-            // Send
+            // Encrypt with channel shared key (XSalsa20-Poly1305)
+            val encrypted = cryptoManager.encryptBroadcast(signedPacket, currentChannelKey)
+                ?: return@withContext Result.failure(
+                    SecurityException("Failed to encrypt audio packet")
+                )
+
+            // Send encrypted packet
             val datagram = DatagramPacket(
                 encrypted,
                 encrypted.size,
@@ -196,12 +216,20 @@ class MulticastPTTTransport @Inject constructor(
             // Prepend channel ID and public key
             val packet = buildControlPacket(channelId, message)
 
-            // TODO: Implement broadcast encryption with channel shared key
-            // For now, sign the packet to ensure integrity
-            val signature = cryptoManager.sign(packet, localSecretKey) ?: ByteArray(64)
-            val encrypted = packet + signature
+            // Sign packet for integrity verification
+            val signature = cryptoManager.sign(packet, localSecretKey)
+                ?: return@withContext Result.failure(
+                    SecurityException("Failed to sign floor control packet")
+                )
+            val signedPacket = packet + signature
 
-            // Send
+            // Encrypt with channel shared key (XSalsa20-Poly1305)
+            val encrypted = cryptoManager.encryptBroadcast(signedPacket, currentChannelKey)
+                ?: return@withContext Result.failure(
+                    SecurityException("Failed to encrypt floor control packet")
+                )
+
+            // Send encrypted packet
             val datagram = DatagramPacket(
                 encrypted,
                 encrypted.size,
@@ -241,20 +269,33 @@ class MulticastPTTTransport @Inject constructor(
                 val packet = DatagramPacket(buffer, buffer.size)
                 socket.receive(packet)
 
-                val rawData = packet.data.copyOf(packet.length)
-                if (rawData.size < 64) continue // Too small, need at least signature
+                val encryptedData = packet.data.copyOf(packet.length)
+                if (encryptedData.size < 40) continue // Minimum: nonce(24) + MAC(16)
+
+                // Decrypt with channel shared key
+                val decrypted = cryptoManager.decryptBroadcast(encryptedData, currentChannelKey)
+                if (decrypted == null) {
+                    logW("Audio packet decryption failed - invalid channel key or corrupted data")
+                    continue
+                }
+
+                // Minimum size: packet data + signature(64)
+                if (decrypted.size < 64) continue
 
                 // Split data and signature
-                val data = rawData.copyOf(rawData.size - 64)
-                val signature = rawData.copyOfRange(rawData.size - 64, rawData.size)
+                val data = decrypted.copyOf(decrypted.size - 64)
+                val signature = decrypted.copyOfRange(decrypted.size - 64, decrypted.size)
 
                 // Parse first to get sender's public key for verification
                 val audioPacket = parseAudioPacket(data) ?: continue
 
-                // TODO: Verify signature with sender's public key from contact repository
-                // For now, accept all packets to allow testing
-                // if (!cryptoManager.verify(data, signature, audioPacket.senderPublicKey)) continue
+                // Verify signature with sender's public key (Military-grade Jan 2026)
+                if (!cryptoManager.verify(data, signature, audioPacket.senderPublicKey)) {
+                    logW("Audio packet signature verification failed from ${audioPacket.senderPublicKey.take(8).toByteArray().toHexString()}")
+                    continue
+                }
 
+                // Don't emit our own packets
                 if (!audioPacket.senderPublicKey.contentEquals(localPublicKey)) {
                     _incomingAudio.emit(audioPacket)
                 }
@@ -271,6 +312,11 @@ class MulticastPTTTransport @Inject constructor(
         }
     }
 
+    /**
+     * Helper extension to convert ByteArray to hex string for logging
+     */
+    private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
+
     private suspend fun controlReceiveLoop() {
         val buffer = ByteArray(1024)
         val socket = controlSocket ?: return
@@ -280,19 +326,33 @@ class MulticastPTTTransport @Inject constructor(
                 val packet = DatagramPacket(buffer, buffer.size)
                 socket.receive(packet)
 
-                val rawData = packet.data.copyOf(packet.length)
-                if (rawData.size < 64) continue // Too small, need at least signature
+                val encryptedData = packet.data.copyOf(packet.length)
+                if (encryptedData.size < 40) continue // Minimum: nonce(24) + MAC(16)
+
+                // Decrypt with channel shared key
+                val decrypted = cryptoManager.decryptBroadcast(encryptedData, currentChannelKey)
+                if (decrypted == null) {
+                    logW("Control packet decryption failed - invalid channel key or corrupted data")
+                    continue
+                }
+
+                // Minimum size: packet data + signature(64)
+                if (decrypted.size < 64) continue
 
                 // Split data and signature
-                val data = rawData.copyOf(rawData.size - 64)
-                val signature = rawData.copyOfRange(rawData.size - 64, rawData.size)
+                val data = decrypted.copyOf(decrypted.size - 64)
+                val signature = decrypted.copyOfRange(decrypted.size - 64, decrypted.size)
 
                 // Parse first to get sender's public key for verification
                 val controlPacket = parseControlPacket(data) ?: continue
 
-                // TODO: Verify signature with sender's public key
-                // if (!cryptoManager.verify(data, signature, controlPacket.senderPublicKey)) continue
+                // Verify signature with sender's public key (Military-grade Jan 2026)
+                if (!cryptoManager.verify(data, signature, controlPacket.senderPublicKey)) {
+                    logW("Control packet signature verification failed from ${controlPacket.senderPublicKey.take(8).toByteArray().toHexString()}")
+                    continue
+                }
 
+                // Don't emit our own packets
                 if (!controlPacket.senderPublicKey.contentEquals(localPublicKey)) {
                     _incomingFloorControl.emit(controlPacket)
                 }

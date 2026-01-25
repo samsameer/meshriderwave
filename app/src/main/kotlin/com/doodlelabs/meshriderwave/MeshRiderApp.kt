@@ -14,15 +14,24 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import dagger.hilt.android.HiltAndroidApp
+import com.doodlelabs.meshriderwave.core.crash.LocalCrashHandler
 import com.doodlelabs.meshriderwave.core.util.Logger
+import javax.inject.Inject
 
 @HiltAndroidApp
 class MeshRiderApp : Application() {
+
+    @Inject
+    lateinit var crashHandler: LocalCrashHandler
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         Logger.init(this)
+
+        // Install local crash handler (offline - no internet required)
+        crashHandler.install(this)
+
         createNotificationChannels()
     }
 
