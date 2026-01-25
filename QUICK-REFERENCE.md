@@ -1,4 +1,4 @@
-ok
+three major 
 # MR Wave — Quick Reference Card
 
 ## One-Line Summary
