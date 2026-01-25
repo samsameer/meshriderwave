@@ -73,7 +73,13 @@ class BeaconManager @Inject constructor(
     companion object {
         private const val TAG = "BeaconManager"
         private const val RECEIVE_BUFFER_SIZE = 4096
-        private const val SOCKET_TIMEOUT_MS = 5000
+        // BATTERY OPTIMIZATION Jan 2026: Longer socket timeout to reduce CPU wakeups
+        // 30s timeout means fewer context switches vs 5s
+        private const val SOCKET_TIMEOUT_MS = 30_000
+        // Adaptive beacon intervals
+        private const val BEACON_INTERVAL_ACTIVE_MS = 30_000L    // 30s when active
+        private const val BEACON_INTERVAL_IDLE_MS = 120_000L     // 2min when no activity
+        private const val PEER_CLEANUP_INTERVAL_MS = 300_000L    // 5min (was 60s)
     }
 
     // Coroutine scope for beacon operations
@@ -261,6 +267,10 @@ class BeaconManager @Inject constructor(
         return true
     }
 
+    // BATTERY OPTIMIZATION Jan 2026: Track last peer activity
+    @Volatile
+    private var lastPeerActivityTime = System.currentTimeMillis()
+
     private suspend fun runBeaconSender() {
         Log.d(TAG, "Beacon sender started")
 
@@ -271,7 +281,15 @@ class BeaconManager @Inject constructor(
                 Log.e(TAG, "Error sending beacon", e)
             }
 
-            delay(IdentityBeacon.BEACON_INTERVAL_MS)
+            // BATTERY OPTIMIZATION Jan 2026: Adaptive beacon interval
+            // If no peer activity for 2 minutes, slow down to conserve battery
+            val timeSinceActivity = System.currentTimeMillis() - lastPeerActivityTime
+            val interval = if (timeSinceActivity < 120_000L || discoveredPeers.isNotEmpty()) {
+                BEACON_INTERVAL_ACTIVE_MS  // 30s when active
+            } else {
+                BEACON_INTERVAL_IDLE_MS    // 2min when idle
+            }
+            delay(interval)
         }
 
         Log.d(TAG, "Beacon sender stopped")
@@ -384,6 +402,9 @@ class BeaconManager @Inject constructor(
         val verifyResult = verifyBeacon(beacon)
         when (verifyResult) {
             is BeaconVerifyResult.Valid -> {
+                // BATTERY OPTIMIZATION Jan 2026: Update activity timestamp
+                lastPeerActivityTime = System.currentTimeMillis()
+
                 // Update discovered peers
                 val peer = DiscoveredPeer(
                     publicKey = beacon.getPublicKeyBytes(),
@@ -442,7 +463,8 @@ class BeaconManager @Inject constructor(
 
     private suspend fun runPeerCleanup() {
         while (_isRunning.value) {
-            delay(60_000)  // Run every minute
+            // BATTERY OPTIMIZATION Jan 2026: 5min interval instead of 60s
+            delay(PEER_CLEANUP_INTERVAL_MS)
 
             val now = System.currentTimeMillis()
             val expiredKeys = discoveredPeers.entries

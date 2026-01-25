@@ -80,6 +80,10 @@ class Connector @Inject constructor(
     @Volatile var socketTimeoutException = false
     @Volatile var genericException = false
 
+    // CALLS NOT WORKING FIX Jan 2026: Track when contact has no addresses
+    // This allows caller to show a specific error message to user
+    @Volatile var noAddressesError = false
+
     // Track the address that successfully connected (for metrics)
     @Volatile var lastConnectedAddress: String? = null
         private set
@@ -124,7 +128,11 @@ class Connector @Inject constructor(
         logD("$TAG connect() lastWorkingAddress: ${contact.lastWorkingAddress}")
 
         if (prioritizedAddresses.isEmpty()) {
+            // CALLS NOT WORKING FIX Jan 2026: Set flag so caller can show specific error
+            noAddressesError = true
             logW("$TAG connect() NO ADDRESSES for ${contact.name}!")
+            logW("$TAG This usually means the contact was added via QR but hasn't been discovered on the network yet")
+            logW("$TAG Try: 1) Ensure both devices are on the same network 2) Re-scan QR code")
             return null
         }
 
@@ -306,6 +314,7 @@ class Connector @Inject constructor(
         connectException = false
         socketTimeoutException = false
         genericException = false
+        noAddressesError = false  // CALLS NOT WORKING FIX Jan 2026
     }
 
     private fun createSocket(address: InetSocketAddress): Socket {

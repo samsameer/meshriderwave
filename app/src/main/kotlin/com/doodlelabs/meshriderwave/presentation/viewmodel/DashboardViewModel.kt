@@ -48,7 +48,11 @@ class DashboardViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "MeshRider:DashboardVM"
-        private const val RADIO_STATUS_REFRESH_INTERVAL = 5000L
+        // BATTERY OPTIMIZATION Jan 2026: Adaptive polling intervals
+        // Foreground: 10s, Background: 60s, Screen off: 5min
+        private const val RADIO_STATUS_INTERVAL_ACTIVE = 10_000L      // 10s when active
+        private const val RADIO_STATUS_INTERVAL_BACKGROUND = 60_000L  // 60s when backgrounded
+        private const val RADIO_STATUS_INTERVAL_DOZE = 300_000L       // 5min in doze
     }
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -165,12 +169,27 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun observeLocation() {
+        // Observe my own location for radar center
+        viewModelScope.launch {
+            locationSharingManager.myLocation.collect { myLocation ->
+                myLocation?.let { loc ->
+                    _uiState.update {
+                        it.copy(
+                            myLatitude = loc.latitude,
+                            myLongitude = loc.longitude
+                        )
+                    }
+                }
+            }
+        }
+
+        // Observe team member locations
         viewModelScope.launch {
             locationSharingManager.teamLocations.collect { locations ->
                 val trackedMembers = locations.map { (hexKey, location) ->
                     TrackedMemberUiState(
                         id = hexKey,
-                        name = "Team $hexKey".take(10),
+                        name = location.memberName ?: "Team ${hexKey.take(4)}",
                         status = when {
                             location.speed > 2.0 -> "MOVING"
                             else -> "ACTIVE"
@@ -330,10 +349,29 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    // MEMORY LEAK FIX Jan 2026: Track polling job for proper cancellation
+    private var radioPollingJob: kotlinx.coroutines.Job? = null
+
+    // BATTERY OPTIMIZATION Jan 2026: Track app lifecycle state
+    @Volatile
+    private var isAppInForeground = true
+
+    /**
+     * Call from Activity/Fragment onResume/onPause to adjust polling rate
+     */
+    fun onLifecycleStateChanged(isInForeground: Boolean) {
+        isAppInForeground = isInForeground
+        Log.d(TAG, "Lifecycle state changed: foreground=$isInForeground")
+    }
+
     private fun startRadioStatusPolling() {
-        viewModelScope.launch {
-            while (radioApiClient.isConnected()) {
-                try {
+        // Cancel any existing polling job first
+        radioPollingJob?.cancel()
+
+        radioPollingJob = viewModelScope.launch {
+            // MEMORY LEAK FIX Jan 2026: Check job cancellation to stop loop when ViewModel is cleared
+            try {
+                while (radioApiClient.isConnected()) {
                     val status = radioApiClient.getWirelessStatus()
                     val stations = radioApiClient.getAssociatedStations()
 
@@ -362,11 +400,21 @@ class DashboardViewModel @Inject constructor(
                             )
                         }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to poll radio status", e)
-                }
 
-                kotlinx.coroutines.delay(RADIO_STATUS_REFRESH_INTERVAL)
+                    // BATTERY OPTIMIZATION Jan 2026: Adaptive polling interval
+                    // Use longer intervals when app is backgrounded to save battery
+                    val pollingInterval = if (isAppInForeground) {
+                        RADIO_STATUS_INTERVAL_ACTIVE
+                    } else {
+                        RADIO_STATUS_INTERVAL_BACKGROUND
+                    }
+                    kotlinx.coroutines.delay(pollingInterval)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal cancellation when ViewModel is cleared - just exit
+                Log.d(TAG, "Radio polling cancelled")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to poll radio status", e)
             }
         }
     }
@@ -408,6 +456,9 @@ class DashboardViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        // MEMORY LEAK FIX Jan 2026: Cancel polling job explicitly
+        radioPollingJob?.cancel()
+        radioPollingJob = null
         radioDiscoveryService.stop()
         radioApiClient.release()
     }
@@ -426,6 +477,10 @@ data class DashboardUiState(
     val trackedTeamMembers: List<TrackedMemberUiState> = emptyList(),
     val recentActivity: List<ActivityUiState> = emptyList(),
     val hasActiveSOS: Boolean = false,
+
+    // My GPS location for radar
+    val myLatitude: Double = 0.0,
+    val myLongitude: Double = 0.0,
 
     // Radio Status
     val isRadioConnected: Boolean = false,

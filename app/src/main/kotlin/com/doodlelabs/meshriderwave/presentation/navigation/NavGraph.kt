@@ -16,6 +16,7 @@ import com.doodlelabs.meshriderwave.presentation.ui.screens.channels.ChannelsScr
 import com.doodlelabs.meshriderwave.presentation.ui.screens.contacts.ContactDetailScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.contacts.ContactsScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.dashboard.DashboardScreen
+import com.doodlelabs.meshriderwave.presentation.ui.screens.dashboard.TacticalDashboardScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.groups.GroupDetailScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.groups.GroupsScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.home.HomeScreen
@@ -68,7 +69,8 @@ fun MeshRiderNavGraph(
         }
 
         composable(Screen.Dashboard.route) {
-            DashboardScreen(
+            // Military-Grade Tactical Dashboard (Starlink-inspired) - Jan 2026
+            TacticalDashboardScreen(
                 onNavigateToGroups = { navController.navigate(Screen.Groups.route) },
                 onNavigateToChannels = { navController.navigate(Screen.Channels.route) },
                 onNavigateToMap = { navController.navigate(Screen.Map.route) },

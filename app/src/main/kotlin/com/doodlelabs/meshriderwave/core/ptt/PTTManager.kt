@@ -677,10 +677,14 @@ class PTTManager @Inject constructor(
         }
 
         // LEGACY mode with Opus encoding
+        // SAMSUNG FIX Jan 2026: Handle ALL error codes from getMinBufferSize
+        // Samsung tablets with custom audio HAL may return unexpected values
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT)
 
-        if (bufferSize == AudioRecord.ERROR_BAD_VALUE || bufferSize == AudioRecord.ERROR) {
-            logE("startAudioCapture: Invalid buffer size")
+        if (bufferSize <= 0) {
+            // CRITICAL: Roll back state machine on failure - prevents app hang
+            logE("startAudioCapture: Invalid buffer size $bufferSize (Samsung audio HAL issue?)")
+            rollbackTransmitState(channel, "Audio system error - buffer size invalid")
             return
         }
 
@@ -695,18 +699,40 @@ class PTTManager @Inject constructor(
 
             // Validate AudioRecord state before starting
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                logE("startAudioCapture: AudioRecord failed to initialize")
+                logE("startAudioCapture: AudioRecord failed to initialize (state=${audioRecord?.state})")
                 audioRecord?.release()
                 audioRecord = null
+                rollbackTransmitState(channel, "Microphone initialization failed")
                 return
             }
 
             audioRecord?.startRecording()
+
+            // SAMSUNG FIX: Verify recording actually started
+            if (audioRecord?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                logE("startAudioCapture: AudioRecord not in RECORDING state after startRecording()")
+                audioRecord?.release()
+                audioRecord = null
+                rollbackTransmitState(channel, "Microphone failed to start")
+                return
+            }
         } catch (e: SecurityException) {
             logE("startAudioCapture: Missing RECORD_AUDIO permission", e)
+            rollbackTransmitState(channel, "Microphone permission denied")
+            return
+        } catch (e: IllegalArgumentException) {
+            // SAMSUNG FIX: Samsung devices throw this for unsupported audio configs
+            logE("startAudioCapture: Samsung audio config not supported", e)
+            rollbackTransmitState(channel, "Audio configuration not supported on this device")
+            return
+        } catch (e: UnsupportedOperationException) {
+            // SAMSUNG FIX: Some Samsung tablets throw this
+            logE("startAudioCapture: Audio operation not supported", e)
+            rollbackTransmitState(channel, "Audio not supported on this device")
             return
         } catch (e: Exception) {
             logE("startAudioCapture: Failed to create AudioRecord", e)
+            rollbackTransmitState(channel, "Microphone error: ${e.message}")
             return
         }
 
@@ -1051,6 +1077,37 @@ class PTTManager @Inject constructor(
         transmitStates[channel.shortId] = MutableStateFlow(
             PTTTransmitState(channelId = channel.channelId)
         )
+    }
+
+    /**
+     * Roll back transmit state on audio failure
+     * SAMSUNG FIX Jan 2026: Prevents state machine from getting stuck in TRANSMITTING
+     * when audio capture fails on Samsung devices
+     */
+    private fun rollbackTransmitState(channel: PTTChannel, errorMessage: String) {
+        val stateFlow = transmitStates[channel.shortId] ?: return
+        logW("rollbackTransmitState: ${channel.name} - $errorMessage")
+
+        // Reset state to IDLE
+        stateFlow.update {
+            it.copy(
+                status = PTTTransmitState.Status.IDLE,
+                currentSpeaker = null,
+                transmissionStart = null
+            )
+        }
+
+        // Release floor control
+        scope.launch {
+            try {
+                floorControlManager.releaseFloor(channel.channelId)
+            } catch (e: Exception) {
+                logE("rollbackTransmitState: Failed to release floor", e)
+            }
+        }
+
+        // Notify UI about failure
+        onFloorDenied?.invoke(channel, errorMessage)
     }
 
     /**

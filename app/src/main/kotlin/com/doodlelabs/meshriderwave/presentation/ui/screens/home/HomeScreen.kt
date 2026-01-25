@@ -121,6 +121,7 @@ fun HomeScreen(
                     items(uiState.contacts.take(5)) { contact ->
                         PremiumContactCard(
                             contact = contact,
+                            isOnline = uiState.isContactOnline(contact),  // REAL status (FIXED Jan 2026)
                             onCall = { onStartCall(contact.deviceId) },
                             onVideoCall = { onStartVideoCall(contact.deviceId) }
                         )
@@ -378,10 +379,12 @@ private fun SectionHeader(
 
 /**
  * Premium Contact Card with avatar and call buttons
+ * FIXED Jan 2026: Now uses REAL online status from peer discovery
  */
 @Composable
 private fun PremiumContactCard(
     contact: Contact,
+    isOnline: Boolean,  // REAL status from peer discovery
     onCall: () -> Unit,
     onVideoCall: () -> Unit
 ) {
@@ -395,10 +398,10 @@ private fun PremiumContactCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Premium Avatar with status
+            // Premium Avatar with REAL status
             ContactAvatar(
                 name = contact.name,
-                status = ContactStatus.OFFLINE, // TODO: Get real status
+                status = if (isOnline) ContactStatus.ONLINE else ContactStatus.OFFLINE,
                 size = 52.dp,
                 fontSize = 18.sp
             )

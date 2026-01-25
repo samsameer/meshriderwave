@@ -75,6 +75,11 @@ class CallActivity : ComponentActivity() {
     private var localRenderer: SurfaceViewRenderer? = null
     private var remoteRenderer: SurfaceViewRenderer? = null
 
+    // VIDEO FIX Jan 2026: Store pending video track when renderer isn't ready
+    // This fixes the one-way video bug on Samsung tablets
+    @Volatile
+    private var pendingRemoteVideoTrack: VideoTrack? = null
+
     // Signaling socket for incoming calls
     private var signalingSocket: Socket? = null
     private var remoteSenderKey: ByteArray? = null
@@ -139,19 +144,27 @@ class CallActivity : ComponentActivity() {
             }
 
             // Set up remote video callback
+            // VIDEO FIX Jan 2026: Store track if renderer not ready, attach later
             onRemoteVideoTrack = { videoTrack ->
                 runOnUiThread {
                     try {
                         logD("Remote video track received")
+                        // Always store the track (may need it later)
+                        pendingRemoteVideoTrack = videoTrack
+
                         remoteRenderer?.let { renderer ->
-                            // Only add sink if renderer is initialized
+                            // Renderer is ready - attach immediately
                             try {
                                 videoTrack.addSink(renderer)
                                 logI("Remote video sink added successfully")
                             } catch (e: Exception) {
                                 logE("Failed to add remote video sink", e)
                             }
-                        } ?: logW("Remote renderer not ready yet")
+                        } ?: run {
+                            // VIDEO FIX: Don't lose the track - it's stored in pendingRemoteVideoTrack
+                            // Will be attached when onRemoteRendererReady is called
+                            logW("Remote renderer not ready - track stored for later attachment")
+                        }
                     } catch (e: Exception) {
                         logE("Error handling remote video track", e)
                     }
@@ -180,6 +193,15 @@ class CallActivity : ComponentActivity() {
                     },
                     onRemoteRendererReady = { renderer ->
                         remoteRenderer = renderer
+                        // VIDEO FIX Jan 2026: Attach pending video track if we received it before renderer was ready
+                        pendingRemoteVideoTrack?.let { track ->
+                            try {
+                                track.addSink(renderer)
+                                logI("Attached pending remote video track to renderer")
+                            } catch (e: Exception) {
+                                logE("Failed to attach pending remote video track", e)
+                            }
+                        }
                         rtcCall?.setVideoRenderers(localRenderer, remoteRenderer)
                     },
                     onToggleMic = { rtcCall?.setMicrophoneEnabled(!callState.isMicEnabled) },

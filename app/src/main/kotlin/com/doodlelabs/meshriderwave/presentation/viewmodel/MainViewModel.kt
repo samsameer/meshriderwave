@@ -7,7 +7,9 @@ package com.doodlelabs.meshriderwave.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.doodlelabs.meshriderwave.core.discovery.BeaconManager
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
+import com.doodlelabs.meshriderwave.core.network.PeerDiscoveryManager
 import com.doodlelabs.meshriderwave.domain.model.Contact
 import com.doodlelabs.meshriderwave.domain.repository.ContactRepository
 import com.doodlelabs.meshriderwave.domain.repository.SettingsRepository
@@ -25,6 +27,8 @@ data class MainUiState(
     val isLoading: Boolean = true,
     val publicKeyBase64: String = "",
     val deviceId: String = "",
+    // REAL online peers - keyed by public key hex (FIXED Jan 2026)
+    val onlinePeerKeys: Set<String> = emptySet(),
     // Video/Audio settings
     val videoHwAccel: Boolean = true,
     val hardwareAEC: Boolean = true,
@@ -37,13 +41,23 @@ data class MainUiState(
     val autoReconnect: Boolean = true,
     val notificationsEnabled: Boolean = true,
     val pttVibration: Boolean = true
-)
+) {
+    /**
+     * Check if a contact is online based on discovered peers
+     */
+    fun isContactOnline(contact: Contact): Boolean {
+        val contactKeyHex = contact.publicKey.joinToString("") { "%02x".format(it) }
+        return onlinePeerKeys.contains(contactKeyHex)
+    }
+}
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val contactRepository: ContactRepository,
-    private val meshNetworkManager: MeshNetworkManager
+    private val meshNetworkManager: MeshNetworkManager,
+    private val peerDiscoveryManager: PeerDiscoveryManager,
+    private val beaconManager: BeaconManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -53,6 +67,7 @@ class MainViewModel @Inject constructor(
         loadSettings()
         observeContacts()
         observeNetworkState()
+        observeOnlinePeers()  // REAL online status (FIXED Jan 2026)
         initializeKeys()
     }
 
@@ -113,6 +128,32 @@ class MainViewModel @Inject constructor(
                     )
                 }
             }.collect()
+        }
+    }
+
+    /**
+     * REAL ONLINE PEERS - Fixed Jan 2026
+     * Combines mDNS discovery + Beacon discovery for accurate online status
+     */
+    private fun observeOnlinePeers() {
+        viewModelScope.launch {
+            combine(
+                peerDiscoveryManager.discoveredPeers,
+                beaconManager.discoveredPeersFlow
+            ) { mdnsPeers, beaconPeers ->
+                // Merge all online peer keys (deduplicated)
+                val allOnlineKeys = mutableSetOf<String>()
+
+                // Add mDNS peers
+                allOnlineKeys.addAll(mdnsPeers.keys)
+
+                // Add beacon peers
+                allOnlineKeys.addAll(beaconPeers.keys)
+
+                allOnlineKeys
+            }.collect { onlineKeys ->
+                _uiState.update { it.copy(onlinePeerKeys = onlineKeys) }
+            }
         }
     }
 

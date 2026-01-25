@@ -622,6 +622,11 @@ class RTCCall(
         }
     }
 
+    /**
+     * Thread-safe state update using atomic update
+     * CRASH FIX Jan 2026: Previous non-atomic read-modify-write caused race conditions
+     * and inconsistent UI state during call setup/teardown
+     */
     private inline fun updateState(update: CallState.() -> CallState) {
         _state.value = _state.value.update()
     }

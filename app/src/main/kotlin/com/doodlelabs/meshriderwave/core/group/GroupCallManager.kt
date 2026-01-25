@@ -610,7 +610,8 @@ class GroupCallManager @Inject constructor(
     // =========================================================================
 
     /**
-     * Get local device criteria for SFU election
+     * Get local device capabilities for SFU election
+     * FIXED Jan 2026: Use real system metrics instead of placeholders
      */
     private fun getLocalElectionCriteria(): SFUElectionCriteria {
         val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -620,14 +621,31 @@ class GroupCallManager @Inject constructor(
         val runtime = Runtime.getRuntime()
         val memoryAvailable = runtime.maxMemory() - runtime.totalMemory() + runtime.freeMemory()
 
+        // CPU score based on processor count (normalized 0-1)
+        val cpuCores = Runtime.getRuntime().availableProcessors()
+        val cpuScore = (cpuCores / 8f).coerceIn(0.1f, 1f)  // 8 cores = 1.0
+
+        // Estimate bandwidth based on network type
+        // WiFi/MeshRider typically 10-50 Mbps, mobile 1-5 Mbps
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = connectivityManager.activeNetwork
+        val capabilities = network?.let { connectivityManager.getNetworkCapabilities(it) }
+
+        val bandwidthDown = capabilities?.linkDownstreamBandwidthKbps?.times(1000L) ?: 10_000_000L
+        val bandwidthUp = capabilities?.linkUpstreamBandwidthKbps?.times(1000L) ?: 5_000_000L
+
+        // Latency estimation based on network type (would need actual RTT measurement)
+        val isWifi = capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+        val networkLatency = if (isWifi) 20L else 100L  // WiFi ~20ms, cellular ~100ms
+
         return SFUElectionCriteria(
-            cpuScore = 0.7f, // Would need actual CPU measurement
+            cpuScore = cpuScore,
             memoryAvailable = memoryAvailable,
-            bandwidthUp = 10_000_000, // 10 Mbps placeholder
-            bandwidthDown = 50_000_000, // 50 Mbps placeholder
+            bandwidthUp = bandwidthUp,
+            bandwidthDown = bandwidthDown,
             batteryLevel = batteryLevel,
             isPluggedIn = isPluggedIn,
-            networkLatency = 50 // ms placeholder
+            networkLatency = networkLatency
         )
     }
 
