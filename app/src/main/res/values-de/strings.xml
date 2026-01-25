@@ -1,0 +1,365 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Mesh Rider Wave - German Localization (de)
+    Übersetzung: Technisch präzise + konversationell natürlich
+
+    Translation Guidelines Applied:
+    - Military terms: Bundeswehr/NATO standard terminology
+    - Technical terms: Industry-standard (some English retained)
+    - UI: Natural German, formal "Sie" form for professional context
+    - Abbreviations: Kept where universally understood (SOS, PTT, QR)
+-->
+<resources>
+    <!-- App Name & Branding -->
+    <string name="app_name">Mesh Rider Wave</string>
+    <string name="app_tagline">Kommunikation ohne Kompromisse</string>
+    <string name="app_version">Version %1$s (Build %2$s)</string>
+    <string name="company_name">Doodle Labs</string>
+    <string name="company_tagline">Konnektivität, die zählt</string>
+
+    <!-- Common Actions -->
+    <string name="action_back">Zurück</string>
+    <string name="action_close">Schließen</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_save">Speichern</string>
+    <string name="action_confirm">Bestätigen</string>
+    <string name="action_dismiss">Verwerfen</string>
+    <string name="action_delete">Löschen</string>
+    <string name="action_edit">Bearbeiten</string>
+    <string name="action_search">Suchen</string>
+    <string name="action_refresh">Aktualisieren</string>
+    <string name="action_copy">Kopieren</string>
+    <string name="action_share">Teilen</string>
+    <string name="action_join">Beitreten</string>
+    <string name="action_leave">Verlassen</string>
+    <string name="action_create">Erstellen</string>
+    <string name="action_add">Hinzufügen</string>
+    <string name="action_clear">Löschen</string>
+    <string name="action_settings">Einstellungen</string>
+    <string name="action_expand">Erweitern</string>
+    <string name="action_toggle_view">Ansicht wechseln</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Startseite</string>
+    <string name="nav_contacts">Kontakte</string>
+    <string name="nav_groups">Gruppen</string>
+    <string name="nav_channels">Kanäle</string>
+    <string name="nav_map">Karte</string>
+    <string name="nav_settings">Einstellungen</string>
+    <string name="nav_calls">Anrufe</string>
+
+    <!-- Status -->
+    <string name="status_online">Online</string>
+    <string name="status_offline">Offline</string>
+    <string name="status_ready">Bereit</string>
+    <string name="status_standby">Standby</string>
+    <string name="status_active">Aktiv</string>
+    <string name="status_moving">In Bewegung</string>
+    <string name="status_alert">Alarm</string>
+    <string name="status_linked">Verbunden</string>
+    <string name="status_connecting">Verbinde…</string>
+    <string name="status_connected">Verbunden</string>
+    <string name="status_disconnected">Getrennt</string>
+    <string name="status_not_connected">Nicht verbunden</string>
+
+    <!-- Readiness Levels (Dashboard) - Military Style -->
+    <string name="readiness_online">EINSATZBEREIT</string>
+    <string name="readiness_ready">BEREIT</string>
+    <string name="readiness_standby">STANDBY</string>
+    <string name="readiness_offline">OFFLINE</string>
+    <string name="readiness_desc_online">Alle Systeme betriebsbereit</string>
+    <string name="readiness_desc_ready">Eingeschränkte Konnektivität</string>
+    <string name="readiness_desc_standby">Eingeschränkter Betrieb</string>
+    <string name="readiness_desc_offline">Kritisch – Offline</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_mission_status">EINSATZSTATUS</string>
+    <string name="dashboard_radio">FUNK</string>
+    <string name="dashboard_mesh">MESH</string>
+    <string name="dashboard_comms">KOMM</string>
+    <string name="dashboard_nodes">KNOTEN</string>
+    <string name="dashboard_chans">KANÄLE</string>
+    <string name="dashboard_track">ORTUNG</string>
+    <string name="dashboard_nodes_count">%d KNOTEN</string>
+    <string name="dashboard_online_count">%d ONLINE</string>
+    <string name="dashboard_sos">SOS</string>
+    <string name="dashboard_sos_active">AKTIV</string>
+    <string name="dashboard_sos_emergency">NOTFALL</string>
+    <string name="dashboard_map">KARTE</string>
+    <string name="dashboard_tracking">VERFOLGUNG</string>
+    <string name="dashboard_ptt">PTT</string>
+    <string name="dashboard_ptt_channels">KANÄLE</string>
+    <string name="dashboard_contacts">KONTAKTE</string>
+    <string name="dashboard_roster">DIENSTLISTE</string>
+    <string name="dashboard_situational_awareness">LAGEBEWUSSTSEIN</string>
+    <string name="dashboard_tracked_count">%d ERFASST</string>
+    <string name="dashboard_comms_channels">FUNKKANÄLE (%d)</string>
+    <string name="dashboard_unit_groups">EINHEITSGRUPPEN (%d)</string>
+    <string name="dashboard_members_count">%d MITGLIEDER</string>
+    <string name="dashboard_radio_telemetry">FUNK-TELEMETRIE</string>
+    <string name="dashboard_default_radio">MESHRIDER</string>
+    <string name="dashboard_chan">KANAL</string>
+    <string name="dashboard_rssi">RSSI</string>
+    <string name="dashboard_snr">SNR</string>
+    <string name="dashboard_link">LINK</string>
+    <string name="dashboard_dbm">%d dBm</string>
+    <string name="dashboard_db">%d dB</string>
+    <string name="dashboard_percent">%d%%</string>
+    <string name="dashboard_tx">TX</string>
+
+    <!-- Contacts -->
+    <string name="contacts_title">Kontakte</string>
+    <string name="contacts_search_placeholder">Kontakte suchen…</string>
+    <string name="contacts_count">%d Kontakte</string>
+    <string name="contacts_online_count">%d online</string>
+    <string name="contacts_empty_title">Noch keine Kontakte</string>
+    <string name="contacts_empty_search">Keine Kontakte gefunden</string>
+    <string name="contacts_empty_hint">QR-Code scannen, um ersten Kontakt hinzuzufügen</string>
+    <string name="contacts_search_hint">Anderen Suchbegriff versuchen</string>
+    <string name="contacts_add">Kontakt hinzufügen</string>
+    <string name="contacts_scan_qr">QR-Code scannen</string>
+    <string name="contacts_my_qr">Mein QR-Code</string>
+    <string name="contacts_unknown_caller">Unbekannter Anrufer</string>
+
+    <!-- QR Code -->
+    <string name="qr_show">Meinen QR-Code anzeigen</string>
+    <string name="qr_scan">QR-Code scannen</string>
+    <string name="qr_scan_join">QR scannen zum Beitreten</string>
+    <string name="qr_enter_code">Code eingeben</string>
+
+    <!-- Calls -->
+    <string name="call_voice">Sprachanruf</string>
+    <string name="call_video">Videoanruf</string>
+    <string name="call_incoming">Eingehender Anruf</string>
+    <string name="call_outgoing">Anruf läuft…</string>
+    <string name="call_connected">Verbunden</string>
+    <string name="call_ended">Anruf beendet</string>
+    <string name="call_missed">Verpasster Anruf</string>
+    <string name="call_accept">Annehmen</string>
+    <string name="call_decline">Ablehnen</string>
+    <string name="call_end">Auflegen</string>
+    <string name="call_mute">Stumm</string>
+    <string name="call_unmute">Ton an</string>
+    <string name="call_speaker">Lautsprecher</string>
+    <string name="call_camera">Kamera</string>
+    <string name="call_switch_camera">Kamera wechseln</string>
+    <string name="call_start">Anruf starten</string>
+    <string name="call_in_progress">Anruf aktiv • %d Teilnehmer</string>
+
+    <!-- Groups -->
+    <string name="groups_title">Gruppen</string>
+    <string name="groups_subtitle">%d Gruppen • MLS-verschlüsselt</string>
+    <string name="groups_create">Gruppe erstellen</string>
+    <string name="groups_join">Gruppe beitreten</string>
+    <string name="groups_empty_title">Noch keine Gruppen</string>
+    <string name="groups_empty_hint">Neue Gruppe erstellen oder bestehender beitreten\nfür sichere Kommunikation</string>
+    <string name="groups_active_calls">Aktive Anrufe</string>
+    <string name="groups_all">Alle Gruppen</string>
+    <string name="groups_member_count">%d Mitglieder</string>
+    <string name="groups_join_invite">Einladungscode eingeben</string>
+    <string name="groups_join_hint">Alternativ QR-Code scannen zum Beitreten</string>
+    <string name="groups_e2e">E2E</string>
+
+    <!-- PTT Channels -->
+    <string name="channels_title">PTT-Kanäle</string>
+    <string name="channels_subtitle">Sprechtasten-Kommunikation</string>
+    <string name="channels_create">Kanal erstellen</string>
+    <string name="channels_available">Verfügbare Kanäle</string>
+    <string name="channels_online_count">%d online</string>
+    <string name="channels_empty_title">Keine PTT-Kanäle</string>
+    <string name="channels_empty_hint">Kanal erstellen für\nSprechtasten-Kommunikation</string>
+    <string name="channels_transmitting">SENDEN</string>
+    <string name="channels_release_to_stop">Loslassen zum Beenden</string>
+    <string name="channels_hold_to_talk">Gedrückt halten zum Sprechen</string>
+    <string name="channels_priority_emergency">NOTFALL</string>
+    <string name="channels_priority_high">HOCH</string>
+    <string name="channels_priority_normal">NORMAL</string>
+    <string name="channels_priority_low">NIEDRIG</string>
+
+    <!-- Map / Blue Force Tracking -->
+    <string name="map_title">Lagedarstellung</string>
+    <string name="map_tracked_count">%d Teammitglieder erfasst</string>
+    <string name="map_legend_you">Sie</string>
+    <string name="map_legend_active">Aktiv</string>
+    <string name="map_legend_moving">In Bewegung</string>
+    <string name="map_legend_sos">SOS</string>
+    <string name="map_legend_offline">Offline</string>
+    <string name="map_compass_north">N</string>
+    <string name="map_scale">100m</string>
+    <string name="map_sharing_on">Standort wird geteilt</string>
+    <string name="map_sharing_off">Standortfreigabe aus</string>
+    <string name="map_sharing_visible">Team kann Ihre Position sehen</string>
+    <string name="map_sharing_tap_enable">Tippen zum Aktivieren</string>
+    <string name="map_center">Zentrieren</string>
+    <string name="map_geofence">Geofence</string>
+    <string name="map_member_distance">%1$dm entfernt • %2$s</string>
+    <string name="map_geofence_safe">SICHER</string>
+    <string name="map_geofence_restricted">GESPERRT</string>
+    <string name="map_geofence_alert">ALARM</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_subtitle">Mesh Rider konfigurieren</string>
+
+    <!-- Settings: Security & Privacy -->
+    <string name="settings_section_security">Sicherheit &amp; Datenschutz</string>
+    <string name="settings_encryption_status">Verschlüsselungsstatus</string>
+    <string name="settings_encryption_mls">MLS-Protokoll aktiv</string>
+    <string name="settings_encryption_secure">Sicher</string>
+    <string name="settings_key_exchange">Schlüsselaustausch</string>
+    <string name="settings_key_exchange_value">Ed25519 + X25519</string>
+    <string name="settings_forward_secrecy">Forward Secrecy</string>
+    <string name="settings_forward_secrecy_value">Aktiviert – Schlüssel rotieren pro Sitzung</string>
+
+    <!-- Settings: Push-to-Talk -->
+    <string name="settings_section_ptt">Sprechtaste (PTT)</string>
+    <string name="settings_ptt_vibration">PTT-Vibration</string>
+    <string name="settings_ptt_vibration_desc">Beim Senden vibrieren</string>
+    <string name="settings_audio_codec">Audio-Codec</string>
+    <string name="settings_audio_codec_value">Opus – Niedrige Latenz</string>
+    <string name="settings_transmission_delay">Übertragungsverzögerung</string>
+    <string name="settings_transmission_delay_value">&lt; 50ms</string>
+    <string name="settings_transmission_delay_badge">Schnell</string>
+
+    <!-- Settings: Blue Force Tracking -->
+    <string name="settings_section_bft">Lagedarstellung</string>
+    <string name="settings_location_sharing">Standortfreigabe</string>
+    <string name="settings_location_sharing_desc">Position mit Team teilen</string>
+    <string name="settings_update_interval">Aktualisierungsintervall</string>
+    <string name="settings_update_interval_value">5 Sekunden</string>
+    <string name="settings_map_provider">Kartenanbieter</string>
+    <string name="settings_map_provider_value">OpenStreetMap (Offline)</string>
+
+    <!-- Settings: Emergency -->
+    <string name="settings_section_emergency">Notfall</string>
+    <string name="settings_sos_system">SOS-System</string>
+    <string name="settings_sos_system_desc">Notfallalarme aktivieren</string>
+    <string name="settings_sos_sound">SOS-Ton</string>
+    <string name="settings_sos_sound_value">Hohe Priorität</string>
+    <string name="settings_geofence_alerts">Geofence-Alarme</string>
+    <string name="settings_geofence_alerts_value">%d aktive Zonen</string>
+
+    <!-- Settings: Mesh Network -->
+    <string name="settings_section_mesh">Mesh-Netzwerk</string>
+    <string name="settings_auto_reconnect">Auto-Wiederverbindung</string>
+    <string name="settings_auto_reconnect_desc">Automatisch mit Mesh verbinden</string>
+    <string name="settings_local_address">Lokale Adresse</string>
+    <string name="settings_connection_timeout">Verbindungs-Timeout</string>
+    <string name="settings_connection_timeout_value">5 Sekunden</string>
+    <string name="settings_discovery_mode">Erkennungsmodus</string>
+    <string name="settings_discovery_mode_value">mDNS + Broadcast</string>
+
+    <!-- Settings: Audio & Video -->
+    <string name="settings_section_av">Audio &amp; Video</string>
+    <string name="settings_hardware_aec">Hardware-Echounterdrückung</string>
+    <string name="settings_hardware_aec_desc">Geräte-AEC verwenden</string>
+    <string name="settings_hardware_video">Hardware-Videokodierung</string>
+    <string name="settings_hardware_video_desc">Geräte-Encoder verwenden</string>
+    <string name="settings_video_quality">Videoqualität</string>
+    <string name="settings_video_quality_value">720p @ 25fps</string>
+    <string name="settings_audio_routing">Audio-Routing</string>
+    <string name="settings_audio_routing_value">Auto (Hörer/Lautsprecher)</string>
+
+    <!-- Settings: Notifications -->
+    <string name="settings_section_notifications">Benachrichtigungen</string>
+    <string name="settings_push_notifications">Push-Benachrichtigungen</string>
+    <string name="settings_push_notifications_desc">Anrufe, Nachrichten, SOS</string>
+    <string name="settings_ringtone">Klingelton</string>
+    <string name="settings_ringtone_value">Taktischer Alarm</string>
+
+    <!-- Settings: Appearance -->
+    <string name="settings_section_appearance">Erscheinungsbild</string>
+    <string name="settings_dark_mode">Dunkelmodus</string>
+    <string name="settings_dark_mode_desc">Immer dunkel für taktischen Einsatz</string>
+
+    <!-- Settings: Data & Storage -->
+    <string name="settings_section_data">Daten &amp; Speicher</string>
+    <string name="settings_offline_messages">Offline-Nachrichten</string>
+    <string name="settings_offline_messages_value">%1$d ausstehend • %2$s</string>
+    <string name="settings_offline_maps">Offline-Karten</string>
+    <string name="settings_offline_maps_desc">Gebietskarten herunterladen</string>
+    <string name="settings_clear_cache">Cache leeren</string>
+    <string name="settings_clear_cache_desc">Speicherplatz freigeben</string>
+
+    <!-- Settings: About -->
+    <string name="settings_section_about">Info</string>
+    <string name="settings_open_source">Open-Source-Lizenzen</string>
+    <string name="settings_open_source_desc">Drittanbieter-Lizenzen anzeigen</string>
+
+    <!-- Profile -->
+    <string name="profile_device_id">Geräte-ID: %s</string>
+    <string name="profile_mesh_connected">Online • Mesh verbunden</string>
+    <string name="profile_view_public_key">Öffentlichen Schlüssel anzeigen</string>
+    <string name="profile_display_name">Anzeigename</string>
+    <string name="profile_enter_name">Namen eingeben</string>
+    <string name="profile_name_helper">Dieser Name ist für andere Teammitglieder sichtbar</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_public_key_title">Ihr öffentlicher Schlüssel</string>
+    <string name="dialog_public_key_message">Teilen Sie diesen Schlüssel mit Teammitgliedern für sichere Kommunikation.\n\nGerät: %1$s\n\nSchlüssel: %2$s…</string>
+    <string name="dialog_mls_title">MLS-Verschlüsselung</string>
+    <string name="dialog_mls_message">Mesh Rider Wave verwendet das Message Layer Security (MLS) Protokoll für Gruppenverschlüsselung.\n\n• Forward Secrecy: Vergangene Nachrichten bleiben sicher\n• Post-Compromise Security: Erholt sich von Schlüssellecks\n• Effiziente Schlüsselverwaltung: Skaliert für große Gruppen</string>
+    <string name="dialog_about_title">Mesh Rider Wave</string>
+    <string name="dialog_about_message">Militärtaugliche taktische Kommunikations-App für Android.\n\n• P2P-Sprach-/Videoanrufe\n• Push-to-Talk-Kanäle\n• Lagedarstellung\n• MLS-Gruppenverschlüsselung\n• Offline-Mesh-Netzwerk\n\nEntwickelt für Doodle Labs Mesh Rider Funkgeräte.\n\nVersion %s</string>
+    <string name="dialog_got_it">Verstanden</string>
+
+    <!-- Developer Dialog -->
+    <string name="developer_name">Jabbir Basha P</string>
+    <string name="developer_title">Leitender Softwareingenieur</string>
+    <string name="developer_location">Doodle Labs • Singapur</string>
+    <string name="developer_bio">Über 15 Jahre Erfahrung in der mobilen Entwicklung, spezialisiert auf Echtzeitkommunikation, Mesh-Netzwerke und sichere Protokolle.</string>
+    <string name="developer_linkedin">LinkedIn-Profil anzeigen</string>
+    <string name="developer_initials">JP</string>
+
+    <!-- Skills -->
+    <string name="skill_android">Android</string>
+    <string name="skill_flutter">Flutter</string>
+    <string name="skill_ai_ml">KI/ML</string>
+    <string name="skill_webrtc">WebRTC</string>
+    <string name="skill_crypto">Krypto</string>
+
+    <!-- Service -->
+    <string name="service_notification_title">Mesh Rider Wave</string>
+    <string name="service_notification_text">Warte auf eingehende Anrufe</string>
+
+    <!-- Errors -->
+    <string name="error_network">Netzwerkfehler</string>
+    <string name="error_connection">Verbindung fehlgeschlagen</string>
+    <string name="error_permission">Berechtigung erforderlich</string>
+    <string name="error_timeout">Verbindungs-Timeout</string>
+    <string name="error_no_contacts">Keine Kontakte verfügbar</string>
+    <string name="error_no_addresses">Kontakt hat keine erreichbaren Adressen</string>
+
+    <!-- Permissions -->
+    <string name="permission_camera">Kamerazugriff für Videoanrufe erforderlich</string>
+    <string name="permission_microphone">Mikrofonzugriff für Anrufe erforderlich</string>
+    <string name="permission_location">Standortzugriff für Lagedarstellung erforderlich</string>
+    <string name="permission_notifications">Benachrichtigungszugriff für eingehende Anrufe erforderlich</string>
+
+    <!-- Content Descriptions (Accessibility) -->
+    <string name="cd_back">Zurück navigieren</string>
+    <string name="cd_settings">Einstellungen öffnen</string>
+    <string name="cd_search">Suchen</string>
+    <string name="cd_close_search">Suche schließen</string>
+    <string name="cd_my_qr">Meinen QR-Code anzeigen</string>
+    <string name="cd_scan_qr">QR-Code scannen</string>
+    <string name="cd_voice_call">Sprachanruf starten</string>
+    <string name="cd_video_call">Videoanruf starten</string>
+    <string name="cd_mute">Mikrofon stummschalten</string>
+    <string name="cd_speaker">Lautsprecher umschalten</string>
+    <string name="cd_switch_camera">Kamera wechseln</string>
+    <string name="cd_end_call">Anruf beenden</string>
+    <string name="cd_accept_call">Anruf annehmen</string>
+    <string name="cd_decline_call">Anruf ablehnen</string>
+    <string name="cd_create_group">Gruppe erstellen</string>
+    <string name="cd_create_channel">Kanal erstellen</string>
+    <string name="cd_leave_channel">Kanal verlassen</string>
+    <string name="cd_join_channel">Kanal beitreten</string>
+    <string name="cd_add_contact">Kontakt hinzufügen</string>
+    <string name="cd_refresh">Aktualisieren</string>
+    <string name="cd_toggle_location">Standortfreigabe umschalten</string>
+    <string name="cd_center_map">Auf meinen Standort zentrieren</string>
+    <string name="cd_add_geofence">Geofence hinzufügen</string>
+    <string name="cd_sos_alert">SOS-Alarm senden</string>
+    <string name="cd_navigation_indicator">Navigationsrichtung</string>
+</resources>
