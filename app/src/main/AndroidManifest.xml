@@ -61,31 +61,34 @@
         android:hardwareAccelerated="true"
         tools:targetApi="35">
 
-        <!-- Main Activity -->
+        <!-- Main Activity - Supports all orientations for tablets/phones -->
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.MeshRiderWave"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:windowSoftInputMode="adjustResize">
+            android:screenOrientation="unspecified"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:windowSoftInputMode="adjustResize"
+            android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Call Activity - Lockscreen capable -->
+        <!-- Call Activity - Lockscreen capable, supports all orientations -->
         <activity
             android:name=".presentation.ui.screens.call.CallActivity"
             android:exported="false"
             android:theme="@style/Theme.MeshRiderWave.Call"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
+            android:screenOrientation="unspecified"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
             android:showOnLockScreen="true"
             android:showWhenLocked="true"
-            android:turnScreenOn="true" />
+            android:turnScreenOn="true"
+            android:resizeableActivity="true" />
 
         <!-- Main Service - P2P Listener -->
         <service

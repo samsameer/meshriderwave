@@ -1,53 +1,355 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App Name & Branding -->
     <string name="app_name">Mesh Rider Wave</string>
     <string name="app_tagline">Comms Without Compromise</string>
+    <string name="app_version">Version %1$s (Build %2$s)</string>
+    <string name="company_name">Doodle Labs</string>
+    <string name="company_tagline">Connectivity that counts</string>
+
+    <!-- Common Actions -->
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_search">Search</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_share">Share</string>
+    <string name="action_join">Join</string>
+    <string name="action_leave">Leave</string>
+    <string name="action_create">Create</string>
+    <string name="action_add">Add</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_expand">Expand</string>
+    <string name="action_toggle_view">Toggle View</string>
 
     <!-- Navigation -->
     <string name="nav_home">Home</string>
     <string name="nav_contacts">Contacts</string>
-    <string name="nav_calls">Calls</string>
+    <string name="nav_groups">Groups</string>
+    <string name="nav_channels">Channels</string>
+    <string name="nav_map">Map</string>
     <string name="nav_settings">Settings</string>
+    <string name="nav_calls">Calls</string>
+
+    <!-- Status -->
+    <string name="status_online">Online</string>
+    <string name="status_offline">Offline</string>
+    <string name="status_ready">Ready</string>
+    <string name="status_standby">Standby</string>
+    <string name="status_active">Active</string>
+    <string name="status_moving">Moving</string>
+    <string name="status_alert">Alert</string>
+    <string name="status_linked">Linked</string>
+    <string name="status_connecting">Connecting</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_not_connected">Not connected</string>
+
+    <!-- Readiness Levels (Dashboard) -->
+    <string name="readiness_online">ONLINE</string>
+    <string name="readiness_ready">READY</string>
+    <string name="readiness_standby">STANDBY</string>
+    <string name="readiness_offline">OFFLINE</string>
+    <string name="readiness_desc_online">All Systems Operational</string>
+    <string name="readiness_desc_ready">Limited Connectivity</string>
+    <string name="readiness_desc_standby">Degraded Operations</string>
+    <string name="readiness_desc_offline">Critical - Offline</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_mission_status">MISSION STATUS</string>
+    <string name="dashboard_radio">RADIO</string>
+    <string name="dashboard_mesh">MESH</string>
+    <string name="dashboard_comms">COMMS</string>
+    <string name="dashboard_nodes">NODES</string>
+    <string name="dashboard_chans">CHANS</string>
+    <string name="dashboard_track">TRACK</string>
+    <string name="dashboard_nodes_count">%d NODES</string>
+    <string name="dashboard_online_count">%d ONLINE</string>
+    <string name="dashboard_sos">SOS</string>
+    <string name="dashboard_sos_active">ACTIVE</string>
+    <string name="dashboard_sos_emergency">EMERGENCY</string>
+    <string name="dashboard_map">MAP</string>
+    <string name="dashboard_tracking">TRACKING</string>
+    <string name="dashboard_ptt">PTT</string>
+    <string name="dashboard_ptt_channels">CHANNELS</string>
+    <string name="dashboard_contacts">CONTACTS</string>
+    <string name="dashboard_roster">ROSTER</string>
+    <string name="dashboard_situational_awareness">SITUATIONAL AWARENESS</string>
+    <string name="dashboard_tracked_count">%d TRACKED</string>
+    <string name="dashboard_comms_channels">COMMS CHANNELS (%d)</string>
+    <string name="dashboard_unit_groups">UNIT GROUPS (%d)</string>
+    <string name="dashboard_members_count">%d MEMBERS</string>
+    <string name="dashboard_radio_telemetry">RADIO TELEMETRY</string>
+    <string name="dashboard_default_radio">MESHRIDER</string>
+    <string name="dashboard_chan">CHAN</string>
+    <string name="dashboard_rssi">RSSI</string>
+    <string name="dashboard_snr">SNR</string>
+    <string name="dashboard_link">LINK</string>
+    <string name="dashboard_dbm">%d dBm</string>
+    <string name="dashboard_db">%d dB</string>
+    <string name="dashboard_percent">%d%%</string>
+    <string name="dashboard_tx">TX</string>
 
     <!-- Contacts -->
-    <string name="add_contact">Add Contact</string>
-    <string name="scan_qr">Scan QR Code</string>
-    <string name="show_qr">Show My QR Code</string>
-    <string name="contact_name">Contact Name</string>
-    <string name="no_contacts">No contacts yet</string>
-    <string name="unknown_caller">Unknown Caller</string>
+    <string name="contacts_title">Contacts</string>
+    <string name="contacts_search_placeholder">Search contacts…</string>
+    <string name="contacts_count">%d contacts</string>
+    <string name="contacts_online_count">%d online</string>
+    <string name="contacts_empty_title">No contacts yet</string>
+    <string name="contacts_empty_search">No contacts found</string>
+    <string name="contacts_empty_hint">Scan a QR code to add your first contact</string>
+    <string name="contacts_search_hint">Try a different search term</string>
+    <string name="contacts_add">Add Contact</string>
+    <string name="contacts_scan_qr">Scan QR Code</string>
+    <string name="contacts_my_qr">My QR Code</string>
+    <string name="contacts_unknown_caller">Unknown Caller</string>
+
+    <!-- QR Code -->
+    <string name="qr_show">Show My QR Code</string>
+    <string name="qr_scan">Scan QR Code</string>
+    <string name="qr_scan_join">Scan QR to Join</string>
+    <string name="qr_enter_code">Enter Code</string>
 
     <!-- Calls -->
-    <string name="voice_call">Voice Call</string>
-    <string name="video_call">Video Call</string>
-    <string name="incoming_call">Incoming Call</string>
-    <string name="outgoing_call">Calling…</string>
+    <string name="call_voice">Voice Call</string>
+    <string name="call_video">Video Call</string>
+    <string name="call_incoming">Incoming Call</string>
+    <string name="call_outgoing">Calling…</string>
     <string name="call_connected">Connected</string>
     <string name="call_ended">Call Ended</string>
-    <string name="missed_call">Missed Call</string>
-    <string name="accept">Accept</string>
-    <string name="decline">Decline</string>
-    <string name="end_call">End Call</string>
-    <string name="mute">Mute</string>
-    <string name="unmute">Unmute</string>
-    <string name="speaker">Speaker</string>
-    <string name="camera">Camera</string>
-    <string name="switch_camera">Switch Camera</string>
+    <string name="call_missed">Missed Call</string>
+    <string name="call_accept">Accept</string>
+    <string name="call_decline">Decline</string>
+    <string name="call_end">End Call</string>
+    <string name="call_mute">Mute</string>
+    <string name="call_unmute">Unmute</string>
+    <string name="call_speaker">Speaker</string>
+    <string name="call_camera">Camera</string>
+    <string name="call_switch_camera">Switch Camera</string>
+    <string name="call_start">Start Call</string>
+    <string name="call_in_progress">Call in progress • %d participants</string>
+
+    <!-- Groups -->
+    <string name="groups_title">Groups</string>
+    <string name="groups_subtitle">%d groups • MLS encrypted</string>
+    <string name="groups_create">Create Group</string>
+    <string name="groups_join">Join Group</string>
+    <string name="groups_empty_title">No Groups Yet</string>
+    <string name="groups_empty_hint">Create a new group or join an existing one\nto start secure communication</string>
+    <string name="groups_active_calls">Active Calls</string>
+    <string name="groups_all">All Groups</string>
+    <string name="groups_member_count">%d members</string>
+    <string name="groups_join_invite">Enter invite code</string>
+    <string name="groups_join_hint">You can also scan a QR code to join</string>
+    <string name="groups_e2e">E2E</string>
+
+    <!-- PTT Channels -->
+    <string name="channels_title">PTT Channels</string>
+    <string name="channels_subtitle">Push-to-Talk Communication</string>
+    <string name="channels_create">Create Channel</string>
+    <string name="channels_available">Available Channels</string>
+    <string name="channels_online_count">%d online</string>
+    <string name="channels_empty_title">No PTT Channels</string>
+    <string name="channels_empty_hint">Create a channel to start\npush-to-talk communication</string>
+    <string name="channels_transmitting">TRANSMITTING</string>
+    <string name="channels_release_to_stop">Release to stop</string>
+    <string name="channels_hold_to_talk">Hold to talk</string>
+    <string name="channels_priority_emergency">EMERGENCY</string>
+    <string name="channels_priority_high">HIGH</string>
+    <string name="channels_priority_normal">NORMAL</string>
+    <string name="channels_priority_low">LOW</string>
+
+    <!-- Map / Blue Force Tracking -->
+    <string name="map_title">Blue Force Tracking</string>
+    <string name="map_tracked_count">%d team members tracked</string>
+    <string name="map_legend_you">You</string>
+    <string name="map_legend_active">Active</string>
+    <string name="map_legend_moving">Moving</string>
+    <string name="map_legend_sos">SOS</string>
+    <string name="map_legend_offline">Offline</string>
+    <string name="map_compass_north">N</string>
+    <string name="map_scale">100m</string>
+    <string name="map_sharing_on">Sharing Location</string>
+    <string name="map_sharing_off">Location Sharing Off</string>
+    <string name="map_sharing_visible">Team can see your position</string>
+    <string name="map_sharing_tap_enable">Tap to enable</string>
+    <string name="map_center">Center</string>
+    <string name="map_geofence">Geofence</string>
+    <string name="map_member_distance">%1$dm away • %2$s</string>
+    <string name="map_geofence_safe">SAFE</string>
+    <string name="map_geofence_restricted">RESTRICTED</string>
+    <string name="map_geofence_alert">ALERT</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_subtitle">Configure your Mesh Rider experience</string>
+
+    <!-- Settings: Security & Privacy -->
+    <string name="settings_section_security">Security &amp; Privacy</string>
+    <string name="settings_encryption_status">Encryption Status</string>
+    <string name="settings_encryption_mls">MLS Protocol Active</string>
+    <string name="settings_encryption_secure">Secure</string>
+    <string name="settings_key_exchange">Key Exchange</string>
+    <string name="settings_key_exchange_value">Ed25519 + X25519</string>
+    <string name="settings_forward_secrecy">Forward Secrecy</string>
+    <string name="settings_forward_secrecy_value">Enabled - Keys rotate per session</string>
+
+    <!-- Settings: Push-to-Talk -->
+    <string name="settings_section_ptt">Push-to-Talk</string>
+    <string name="settings_ptt_vibration">PTT Vibration</string>
+    <string name="settings_ptt_vibration_desc">Vibrate when transmitting</string>
+    <string name="settings_audio_codec">Audio Codec</string>
+    <string name="settings_audio_codec_value">Opus - Low Latency</string>
+    <string name="settings_transmission_delay">Transmission Delay</string>
+    <string name="settings_transmission_delay_value">&lt; 50ms</string>
+    <string name="settings_transmission_delay_badge">Fast</string>
+
+    <!-- Settings: Blue Force Tracking -->
+    <string name="settings_section_bft">Blue Force Tracking</string>
+    <string name="settings_location_sharing">Location Sharing</string>
+    <string name="settings_location_sharing_desc">Share position with team</string>
+    <string name="settings_update_interval">Update Interval</string>
+    <string name="settings_update_interval_value">5 seconds</string>
+    <string name="settings_map_provider">Map Provider</string>
+    <string name="settings_map_provider_value">OpenStreetMap (Offline)</string>
+
+    <!-- Settings: Emergency -->
+    <string name="settings_section_emergency">Emergency</string>
+    <string name="settings_sos_system">SOS System</string>
+    <string name="settings_sos_system_desc">Enable emergency alerts</string>
+    <string name="settings_sos_sound">SOS Sound</string>
+    <string name="settings_sos_sound_value">High Priority Alert</string>
+    <string name="settings_geofence_alerts">Geofence Alerts</string>
+    <string name="settings_geofence_alerts_value">%d active zones</string>
+
+    <!-- Settings: Mesh Network -->
+    <string name="settings_section_mesh">Mesh Network</string>
+    <string name="settings_auto_reconnect">Auto Reconnect</string>
+    <string name="settings_auto_reconnect_desc">Automatically reconnect to mesh</string>
+    <string name="settings_local_address">Local Address</string>
+    <string name="settings_connection_timeout">Connection Timeout</string>
+    <string name="settings_connection_timeout_value">5 seconds</string>
+    <string name="settings_discovery_mode">Discovery Mode</string>
+    <string name="settings_discovery_mode_value">mDNS + Broadcast</string>
+
+    <!-- Settings: Audio & Video -->
+    <string name="settings_section_av">Audio &amp; Video</string>
+    <string name="settings_hardware_aec">Hardware Echo Cancellation</string>
+    <string name="settings_hardware_aec_desc">Use device AEC</string>
+    <string name="settings_hardware_video">Hardware Video Encoding</string>
+    <string name="settings_hardware_video_desc">Use device encoder</string>
+    <string name="settings_video_quality">Video Quality</string>
+    <string name="settings_video_quality_value">720p @ 25fps</string>
+    <string name="settings_audio_routing">Audio Routing</string>
+    <string name="settings_audio_routing_value">Auto (Earpiece/Speaker)</string>
+
+    <!-- Settings: Notifications -->
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_push_notifications">Push Notifications</string>
+    <string name="settings_push_notifications_desc">Calls, messages, SOS</string>
+    <string name="settings_ringtone">Ringtone</string>
+    <string name="settings_ringtone_value">Tactical Alert</string>
+
+    <!-- Settings: Appearance -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_dark_mode">Dark Mode</string>
+    <string name="settings_dark_mode_desc">Always dark for tactical use</string>
+
+    <!-- Settings: Data & Storage -->
+    <string name="settings_section_data">Data &amp; Storage</string>
+    <string name="settings_offline_messages">Offline Messages</string>
+    <string name="settings_offline_messages_value">%1$d pending • %2$s</string>
+    <string name="settings_offline_maps">Offline Maps</string>
+    <string name="settings_offline_maps_desc">Download area maps</string>
+    <string name="settings_clear_cache">Clear Cache</string>
+    <string name="settings_clear_cache_desc">Free up storage space</string>
+
+    <!-- Settings: About -->
+    <string name="settings_section_about">About</string>
+    <string name="settings_open_source">Open Source Licenses</string>
+    <string name="settings_open_source_desc">View third-party licenses</string>
+
+    <!-- Profile -->
+    <string name="profile_device_id">Device ID: %s</string>
+    <string name="profile_mesh_connected">Online • Mesh Connected</string>
+    <string name="profile_view_public_key">View Public Key</string>
+    <string name="profile_display_name">Display Name</string>
+    <string name="profile_enter_name">Enter your name</string>
+    <string name="profile_name_helper">This name is visible to other team members</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_public_key_title">Your Public Key</string>
+    <string name="dialog_public_key_message">Share this key with team members for secure communication.\n\nDevice: %1$s\n\nKey: %2$s…</string>
+    <string name="dialog_mls_title">MLS Encryption</string>
+    <string name="dialog_mls_message">Mesh Rider Wave uses Message Layer Security (MLS) protocol for group encryption.\n\n• Forward Secrecy: Past messages stay secure\n• Post-Compromise Security: Recovers from key leaks\n• Efficient Key Management: Scales to large groups</string>
+    <string name="dialog_about_title">Mesh Rider Wave</string>
+    <string name="dialog_about_message">Military-grade tactical communication app for Android.\n\n• P2P Voice/Video Calls\n• Push-to-Talk Channels\n• Blue Force Tracking\n• MLS Group Encryption\n• Offline Mesh Networking\n\nBuilt for Doodle Labs Mesh Rider radios.\n\nVersion %s</string>
+    <string name="dialog_got_it">Got it</string>
+
+    <!-- Developer Dialog -->
+    <string name="developer_name">Jabbir Basha P</string>
+    <string name="developer_title">Lead Software Engineer</string>
+    <string name="developer_location">Doodle Labs • Singapore</string>
+    <string name="developer_bio">15+ years of experience in mobile development, specializing in real-time communication, mesh networking, and secure protocols.</string>
+    <string name="developer_linkedin">View LinkedIn Profile</string>
+    <string name="developer_initials">JP</string>
+
+    <!-- Skills -->
+    <string name="skill_android">Android</string>
+    <string name="skill_flutter">Flutter</string>
+    <string name="skill_ai_ml">AI/ML</string>
+    <string name="skill_webrtc">WebRTC</string>
+    <string name="skill_crypto">Crypto</string>
 
     <!-- Service -->
     <string name="service_notification_title">Mesh Rider Wave</string>
     <string name="service_notification_text">Listening for incoming calls</string>
 
-    <!-- Settings -->
-    <string name="settings_general">General</string>
-    <string name="settings_network">Network</string>
-    <string name="settings_audio">Audio</string>
-    <string name="settings_video">Video</string>
-    <string name="settings_security">Security</string>
-    <string name="settings_about">About</string>
-
     <!-- Errors -->
     <string name="error_network">Network error</string>
     <string name="error_connection">Connection failed</string>
     <string name="error_permission">Permission required</string>
+    <string name="error_timeout">Connection timed out</string>
+    <string name="error_no_contacts">No contacts available</string>
+    <string name="error_no_addresses">Contact has no reachable addresses</string>
+
+    <!-- Permissions -->
+    <string name="permission_camera">Camera access needed for video calls</string>
+    <string name="permission_microphone">Microphone access needed for calls</string>
+    <string name="permission_location">Location access needed for Blue Force Tracking</string>
+    <string name="permission_notifications">Notification access needed for incoming calls</string>
+
+    <!-- Content Descriptions (Accessibility) -->
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_settings">Open settings</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_close_search">Close search</string>
+    <string name="cd_my_qr">Show my QR code</string>
+    <string name="cd_scan_qr">Scan QR code</string>
+    <string name="cd_voice_call">Start voice call</string>
+    <string name="cd_video_call">Start video call</string>
+    <string name="cd_mute">Mute microphone</string>
+    <string name="cd_speaker">Toggle speaker</string>
+    <string name="cd_switch_camera">Switch camera</string>
+    <string name="cd_end_call">End call</string>
+    <string name="cd_accept_call">Accept call</string>
+    <string name="cd_decline_call">Decline call</string>
+    <string name="cd_create_group">Create group</string>
+    <string name="cd_create_channel">Create channel</string>
+    <string name="cd_leave_channel">Leave channel</string>
+    <string name="cd_join_channel">Join channel</string>
+    <string name="cd_add_contact">Add contact</string>
+    <string name="cd_refresh">Refresh</string>
+    <string name="cd_toggle_location">Toggle location sharing</string>
+    <string name="cd_center_map">Center on my location</string>
+    <string name="cd_add_geofence">Add geofence</string>
+    <string name="cd_sos_alert">Send SOS alert</string>
+    <string name="cd_navigation_indicator">Navigation direction</string>
 </resources>

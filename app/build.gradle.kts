@@ -113,6 +113,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons)
     implementation(libs.compose.animation)
+    // WindowSizeClass for responsive layouts (phones, tablets, foldables)
+    implementation("androidx.compose.material3:material3-window-size-class")
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 

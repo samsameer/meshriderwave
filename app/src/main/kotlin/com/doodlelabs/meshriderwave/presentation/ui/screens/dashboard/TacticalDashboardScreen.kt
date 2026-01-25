@@ -43,8 +43,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.doodlelabs.meshriderwave.R
+import com.doodlelabs.meshriderwave.presentation.LocalWindowWidthSizeClass
 import com.doodlelabs.meshriderwave.presentation.ui.theme.PremiumColors
 import com.doodlelabs.meshriderwave.presentation.viewmodel.DashboardViewModel
 
@@ -77,12 +81,12 @@ object TacticalColors {
     val Offline = TextMuted
 }
 
-// Readiness Levels (Monochrome status)
-enum class ReadinessLevel(val label: String, val color: Color, val description: String) {
-    ALPHA("ONLINE", TacticalColors.Accent, "All Systems Operational"),
-    BRAVO("READY", TacticalColors.AccentDim, "Limited Connectivity"),
-    CHARLIE("STANDBY", TacticalColors.TextSecondary, "Degraded Operations"),
-    DELTA("OFFLINE", TacticalColors.Critical, "Critical - Offline")
+// Readiness Levels (Monochrome status) - Localized
+enum class ReadinessLevel(val labelRes: Int, val color: Color, val descriptionRes: Int) {
+    ALPHA(R.string.readiness_online, TacticalColors.Accent, R.string.readiness_desc_online),
+    BRAVO(R.string.readiness_ready, TacticalColors.AccentDim, R.string.readiness_desc_ready),
+    CHARLIE(R.string.readiness_standby, TacticalColors.TextSecondary, R.string.readiness_desc_standby),
+    DELTA(R.string.readiness_offline, TacticalColors.Critical, R.string.readiness_desc_offline)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +102,14 @@ fun TacticalDashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
+
+    // Get WindowSizeClass for responsive layouts
+    val widthSizeClass = LocalWindowWidthSizeClass.current
+    val isCompact = widthSizeClass == WindowWidthSizeClass.Compact
+    val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
+
+    // Responsive padding - more on tablets
+    val horizontalPadding = if (isCompact) 20.dp else if (isExpanded) 48.dp else 32.dp
 
     // Calculate readiness level
     val readiness = remember(uiState.isServiceRunning, uiState.discoveredPeers, uiState.isRadioConnected) {
@@ -125,7 +137,7 @@ fun TacticalDashboardScreen(
                     callsign = uiState.username.uppercase(),
                     readiness = readiness,
                     onSettingsClick = onNavigateToSettings,
-                    modifier = Modifier.padding(horizontal = 20.dp)
+                    modifier = Modifier.padding(horizontal = horizontalPadding)
                 )
             }
 
@@ -137,11 +149,11 @@ fun TacticalDashboardScreen(
                     radioSignal = uiState.radioSignal,
                     meshPeers = uiState.meshPeerCount,
                     appPeers = uiState.discoveredPeers,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                    modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 16.dp)
                 )
             }
 
-            // Tactical Metrics Grid
+            // Tactical Metrics Grid - responsive columns
             item {
                 TacticalMetricsGrid(
                     commsOnline = uiState.discoveredPeers,
@@ -149,7 +161,8 @@ fun TacticalDashboardScreen(
                     channelsJoined = uiState.activeChannels.size,
                     teamsTracked = uiState.trackedTeamMembers.size,
                     hasSOS = uiState.hasActiveSOS,
-                    modifier = Modifier.padding(horizontal = 20.dp)
+                    isExpanded = isExpanded,
+                    modifier = Modifier.padding(horizontal = horizontalPadding)
                 )
             }
 
@@ -323,7 +336,7 @@ private fun TacticalHeader(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = readiness.label,
+                    text = stringResource(readiness.labelRes),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
@@ -342,7 +355,7 @@ private fun TacticalHeader(
             ) {
                 Icon(
                     Icons.Outlined.Settings,
-                    contentDescription = "Settings",
+                    contentDescription = stringResource(R.string.cd_settings),
                     modifier = Modifier.size(20.dp),
                     tint = TacticalColors.TextSecondary
                 )
@@ -415,14 +428,14 @@ private fun MissionStatusPanel(
 
                 Column {
                     Text(
-                        text = "MISSION STATUS",
+                        text = stringResource(R.string.dashboard_mission_status),
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         color = TacticalColors.TextMuted,
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = readiness.description,
+                        text = stringResource(readiness.descriptionRes),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = TacticalColors.TextPrimary
@@ -566,11 +579,15 @@ private fun TacticalMetricsGrid(
     channelsJoined: Int,
     teamsTracked: Int,
     hasSOS: Boolean,
+    isExpanded: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    // Responsive spacing for tablets - more generous on larger screens
+    val spacing = if (isExpanded) 16.dp else 10.dp
+
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(spacing)
     ) {
         MetricCard(
             modifier = Modifier.weight(1f),

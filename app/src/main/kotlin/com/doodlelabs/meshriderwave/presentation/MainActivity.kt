@@ -16,7 +16,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -30,6 +35,13 @@ import com.doodlelabs.meshriderwave.presentation.ui.theme.MeshRiderWaveTheme
 import com.doodlelabs.meshriderwave.presentation.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
+/**
+ * CompositionLocal for WindowWidthSizeClass - enables responsive layouts throughout the app
+ * Usage: val widthSizeClass = LocalWindowWidthSizeClass.current
+ */
+val LocalWindowWidthSizeClass = compositionLocalOf { WindowWidthSizeClass.Compact }
+
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -51,25 +63,32 @@ class MainActivity : ComponentActivity() {
         requestPermissions()
 
         setContent {
+            // Calculate WindowSizeClass for responsive layouts
+            val windowSizeClass = calculateWindowSizeClass(this)
+            val widthSizeClass = windowSizeClass.widthSizeClass
+
             val viewModel: MainViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsState()
 
-            MeshRiderWaveTheme(darkTheme = uiState.nightMode) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    val navController = rememberNavController()
+            // Provide WindowSizeClass to all composables via CompositionLocal
+            CompositionLocalProvider(LocalWindowWidthSizeClass provides widthSizeClass) {
+                MeshRiderWaveTheme(darkTheme = uiState.nightMode) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        val navController = rememberNavController()
 
-                    MeshRiderNavGraph(
-                        navController = navController,
-                        onStartCall = { contactId ->
-                            startCallActivity(contactId, isVideoCall = false)
-                        },
-                        onStartVideoCall = { contactId ->
-                            startCallActivity(contactId, isVideoCall = true)
-                        }
-                    )
+                        MeshRiderNavGraph(
+                            navController = navController,
+                            onStartCall = { contactId ->
+                                startCallActivity(contactId, isVideoCall = false)
+                            },
+                            onStartVideoCall = { contactId ->
+                                startCallActivity(contactId, isVideoCall = true)
+                            }
+                        )
+                    }
                 }
             }
         }
