@@ -584,7 +584,7 @@ private fun ActionButton(
                 imageVector = icon,
                 contentDescription = label,
                 modifier = Modifier.size(22.dp),
-                tint = Color.White
+                tint = PremiumColors.TextPrimary
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -640,7 +640,7 @@ private fun SecondaryActionsRow(
                         Icons.Default.Contacts,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = Color.White
+                        tint = PremiumColors.TextPrimary
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -844,7 +844,7 @@ private fun ChannelCard(
                         Icons.Default.RecordVoiceOver,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = Color.White
+                        tint = PremiumColors.TextPrimary
                     )
                 }
 
@@ -932,7 +932,7 @@ private fun GroupCard(
                 Icons.Default.Groups,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = Color.White
+                tint = PremiumColors.TextPrimary
             )
         }
 
@@ -984,7 +984,7 @@ private fun GroupCard(
                     text = if (unreadCount > 9) "9+" else unreadCount.toString(),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = PremiumColors.TextPrimary,
                     fontSize = 10.sp
                 )
             }
@@ -1039,13 +1039,42 @@ data class GroupUiState(
     val unreadCount: Int
 )
 
+/**
+ * Tracked Team Member UI State - ATAK-Style Blue Force Tracking
+ * Military-grade situational awareness data model
+ */
 data class TrackedMemberUiState(
-    val id: String,
-    val name: String,
-    val status: String,
+    val id: String,                    // Public key hex (unique identifier)
+    val name: String,                  // Callsign/display name
+    val status: MemberStatus,          // Current tactical status
     val latitude: Double,
-    val longitude: Double
-)
+    val longitude: Double,
+    val distanceMeters: Double = 0.0,  // Distance from my position
+    val bearingDegrees: Float = 0f,    // Bearing from my position (0-360)
+    val speedMps: Double = 0.0,        // Speed in m/s (for MOVING detection)
+    val lastSeenMs: Long = 0L,         // Last beacon/update timestamp
+    val hasSOS: Boolean = false,       // Active SOS alert
+    val ipAddress: String? = null,     // For direct calling
+    val publicKey: ByteArray? = null   // For encrypted calling
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is TrackedMemberUiState) return false
+        return id == other.id
+    }
+    override fun hashCode(): Int = id.hashCode()
+}
+
+/**
+ * Member Status - ATAK-compatible tactical statuses
+ */
+enum class MemberStatus(val label: String, val priority: Int) {
+    SOS("SOS", 0),           // Highest priority - emergency
+    MOVING("MOVING", 1),     // In motion (speed > 2 m/s)
+    ACTIVE("ACTIVE", 2),     // Online, stationary
+    STALE("STALE", 3),       // No update in 2+ minutes
+    OFFLINE("OFFLINE", 4)    // No update in 5+ minutes
+}
 
 data class ActivityUiState(
     val type: String,
@@ -1117,7 +1146,7 @@ private fun RadioStatusCard(
                         imageVector = Icons.Default.Router,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = Color.White
+                        tint = PremiumColors.TextPrimary
                     )
                 }
                 Column {

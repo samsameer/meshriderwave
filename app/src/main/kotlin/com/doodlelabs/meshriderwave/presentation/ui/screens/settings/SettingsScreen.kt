@@ -67,6 +67,7 @@ fun SettingsScreen(
     var showSecurityInfoDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showDeveloperDialog by remember { mutableStateOf(false) }
+    var showRadioIpDialog by remember { mutableStateOf(false) }
 
     // Settings states - now from ViewModel (persisted)
     // No more local state - all settings persist to DataStore
@@ -284,6 +285,82 @@ fun SettingsScreen(
                     }
                 }
 
+                // DoodleLabs Radio Section (Jan 2026)
+                item {
+                    SettingsSection(title = "DoodleLabs Radio") {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            // Radio IP
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.Router,
+                                iconColor = PremiumColors.ElectricCyan,
+                                title = "Radio IP Address",
+                                subtitle = uiState.radioIp.ifEmpty { "Not configured" },
+                                onClick = { showRadioIpDialog = true }
+                            )
+                            // Connection Status
+                            PremiumSettingsItem(
+                                icon = if (uiState.radioConnected) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel,
+                                iconColor = if (uiState.radioConnected) PremiumColors.AuroraGreen
+                                           else if (uiState.radioConnecting) PremiumColors.SolarGold
+                                           else PremiumColors.OfflineGray,
+                                title = "Connection Status",
+                                subtitle = when {
+                                    uiState.radioConnecting -> "Connecting..."
+                                    uiState.radioConnected -> "Connected to ${uiState.radioHostname.ifEmpty { uiState.radioIp }}"
+                                    uiState.radioError != null -> "Error: ${uiState.radioError}"
+                                    else -> "Disconnected"
+                                },
+                                badge = if (uiState.radioConnected) "Online" else null,
+                                badgeColor = PremiumColors.AuroraGreen,
+                                onClick = { }
+                            )
+                            // Radio Model (when connected)
+                            if (uiState.radioConnected && uiState.radioModel.isNotEmpty()) {
+                                PremiumSettingsItem(
+                                    icon = Icons.Outlined.Memory,
+                                    iconColor = PremiumColors.HoloPurple,
+                                    title = "Radio Model",
+                                    subtitle = uiState.radioModel,
+                                    onClick = { }
+                                )
+                            }
+                            // Signal Quality (when connected)
+                            if (uiState.radioConnected && uiState.radioSignal != 0) {
+                                val snr = uiState.radioSignal - uiState.radioNoise
+                                PremiumSettingsItem(
+                                    icon = Icons.Outlined.SignalCellularAlt,
+                                    iconColor = when {
+                                        snr >= 25 -> PremiumColors.AuroraGreen
+                                        snr >= 15 -> PremiumColors.SolarGold
+                                        else -> PremiumColors.NeonMagenta
+                                    },
+                                    title = "Signal Quality",
+                                    subtitle = "Signal: ${uiState.radioSignal} dBm | SNR: ${snr} dB",
+                                    badge = when {
+                                        snr >= 25 -> "Excellent"
+                                        snr >= 15 -> "Good"
+                                        snr >= 10 -> "Fair"
+                                        else -> "Poor"
+                                    },
+                                    badgeColor = when {
+                                        snr >= 25 -> PremiumColors.AuroraGreen
+                                        snr >= 15 -> PremiumColors.SolarGold
+                                        else -> PremiumColors.NeonMagenta
+                                    },
+                                    onClick = { }
+                                )
+                            }
+                            // Connect/Disconnect Button
+                            RadioConnectionButton(
+                                isConnected = uiState.radioConnected,
+                                isConnecting = uiState.radioConnecting,
+                                onConnect = { viewModel.connectToRadio() },
+                                onDisconnect = { viewModel.disconnectFromRadio() }
+                            )
+                        }
+                    }
+                }
+
                 // Audio & Video Section
                 item {
                     SettingsSection(title = "Audio & Video") {
@@ -356,6 +433,16 @@ fun SettingsScreen(
                                 subtitle = "Always dark for tactical use",
                                 checked = uiState.nightMode,
                                 onCheckedChange = { viewModel.setNightMode(it) }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.Language,
+                                iconColor = PremiumColors.ElectricCyan,
+                                title = "Language",
+                                subtitle = "English, Deutsch",
+                                onClick = { /* Opens system language settings */
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS)
+                                    context.startActivity(intent)
+                                }
                             )
                         }
                     }
@@ -483,6 +570,23 @@ fun SettingsScreen(
             }
         )
     }
+
+    // Radio IP Dialog
+    if (showRadioIpDialog) {
+        PremiumInputDialog(
+            title = "Radio IP Address",
+            placeholder = "e.g. 10.223.232.1",
+            initialValue = uiState.radioIp,
+            confirmText = "Save",
+            icon = Icons.Outlined.Router,
+            helperText = "Enter the IP address of your DoodleLabs MeshRider radio",
+            onConfirm = { ip ->
+                viewModel.setRadioIp(ip)
+                showRadioIpDialog = false
+            },
+            onDismiss = { showRadioIpDialog = false }
+        )
+    }
 }
 
 // ============================================================================
@@ -542,7 +646,7 @@ private fun ProfileCard(
                         text = username.firstOrNull()?.uppercase() ?: "U",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = PremiumColors.TextPrimary
                     )
                 }
                 // Status indicator
@@ -867,8 +971,89 @@ private fun PremiumSwitch(
                 .offset(x = animatedOffset)
                 .size(20.dp)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(PremiumColors.TextPrimary)
         )
+    }
+}
+
+/**
+ * Radio Connect/Disconnect button (Jan 2026)
+ */
+@Composable
+private fun RadioConnectionButton(
+    isConnected: Boolean,
+    isConnecting: Boolean,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    when {
+                        isConnecting -> PremiumColors.SolarGold.copy(alpha = 0.15f)
+                        isConnected -> PremiumColors.NeonMagenta.copy(alpha = 0.15f)
+                        else -> PremiumColors.AuroraGreen.copy(alpha = 0.15f)
+                    }
+                )
+                .border(
+                    width = 1.dp,
+                    color = when {
+                        isConnecting -> PremiumColors.SolarGold.copy(alpha = 0.3f)
+                        isConnected -> PremiumColors.NeonMagenta.copy(alpha = 0.3f)
+                        else -> PremiumColors.AuroraGreen.copy(alpha = 0.3f)
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .clickable(enabled = !isConnecting) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (isConnected) onDisconnect() else onConnect()
+                }
+                .padding(14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isConnecting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = PremiumColors.SolarGold,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (isConnected) Icons.Outlined.LinkOff else Icons.Outlined.Link,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = if (isConnected) PremiumColors.NeonMagenta else PremiumColors.AuroraGreen
+                    )
+                }
+                Text(
+                    text = when {
+                        isConnecting -> "Connecting..."
+                        isConnected -> "Disconnect from Radio"
+                        else -> "Connect to Radio"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        isConnecting -> PremiumColors.SolarGold
+                        isConnected -> PremiumColors.NeonMagenta
+                        else -> PremiumColors.AuroraGreen
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -937,7 +1122,7 @@ private fun DeveloperDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
+                .background(PremiumColors.DeepSpace.copy(alpha = 0.6f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -993,7 +1178,7 @@ private fun DeveloperDialog(
                             text = "JP",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = PremiumColors.TextPrimary
                         )
                     }
 
@@ -1076,7 +1261,7 @@ private fun DeveloperDialog(
                             text = "View LinkedIn Profile",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            color = PremiumColors.TextPrimary
                         )
                     }
 

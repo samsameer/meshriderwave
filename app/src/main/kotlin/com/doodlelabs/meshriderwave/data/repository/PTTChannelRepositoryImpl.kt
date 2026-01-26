@@ -172,6 +172,35 @@ class PTTChannelRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * Add or update a channel (for importing discovered channels from network)
+     * Jan 2026: Added for PTT channel discovery between devices
+     */
+    override suspend fun addOrUpdateChannel(channel: PTTChannel): Result<Unit> = mutex.withLock {
+        try {
+            val current = _channels.value.toMutableList()
+            val existingIndex = current.indexOfFirst { it.channelId.contentEquals(channel.channelId) }
+
+            if (existingIndex >= 0) {
+                // Update existing channel
+                current[existingIndex] = channel
+                Log.d(TAG, "Updated existing channel: ${channel.shortId}")
+            } else {
+                // Add new channel
+                current.add(channel)
+                Log.d(TAG, "Added new channel from network: ${channel.shortId} - ${channel.name}")
+            }
+
+            _channels.value = current
+            saveToDisk()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add/update channel", e)
+            Result.failure(e)
+        }
+    }
+
     // ========== Membership ==========
 
     override suspend fun joinChannel(

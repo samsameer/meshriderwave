@@ -11,6 +11,8 @@
 
 package com.doodlelabs.meshriderwave.presentation.ui.screens.map
 
+import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -59,6 +61,16 @@ fun MapScreen(
     var showTeamList by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
+    // Handle back button - if member detail is showing, close it first
+    BackHandler(enabled = true) {
+        Log.d("MeshRider:MapScreen", "BackHandler triggered, selectedMember=${uiState.selectedMember?.name}")
+        if (uiState.selectedMember != null) {
+            viewModel.clearSelection()
+        } else {
+            onNavigateBack()
+        }
+    }
+
     DeepSpaceBackground {
         Scaffold(
             containerColor = Color.Transparent,
@@ -80,7 +92,14 @@ fun MapScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(onClick = {
+                            Log.d("MeshRider:MapScreen", "Back button clicked")
+                            if (uiState.selectedMember != null) {
+                                viewModel.clearSelection()
+                            } else {
+                                onNavigateBack()
+                            }
+                        }) {
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Back",
@@ -119,7 +138,11 @@ fun MapScreen(
                     // Team list view
                     TeamListView(
                         members = uiState.trackedMembers,
-                        onMemberClick = { /* Focus on member */ },
+                        onMemberClick = { memberId ->
+                            Log.d("MeshRider:MapScreen", "Member clicked in list: $memberId")
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.selectMember(memberId)
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -129,34 +152,58 @@ fun MapScreen(
                         teamMembers = uiState.trackedMembers,
                         geofences = uiState.geofences,
                         sosAlerts = uiState.sosAlerts,
-                        onMemberClick = { /* Focus on member */ },
+                        onMemberClick = { memberId ->
+                            Log.d("MeshRider:MapScreen", "Member pin clicked: $memberId")
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.selectMember(memberId)
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
 
-                // Bottom controls
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                ) {
-                    // Location sharing toggle
-                    LocationSharingCard(
-                        isSharing = uiState.isSharingLocation,
-                        onToggle = { viewModel.toggleLocationSharing() }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Quick actions
-                    MapQuickActions(
-                        onCenterOnMe = { viewModel.centerOnMyLocation() },
-                        onAddGeofence = { /* Open geofence dialog */ },
-                        onSOSAlert = {
+                // Member detail sheet (when a member is selected)
+                uiState.selectedMember?.let { member ->
+                    MemberDetailSheet(
+                        member = member,
+                        onDismiss = { viewModel.clearSelection() },
+                        onCall = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.activateSOS()
-                        }
+                            Log.i("MeshRider:MapScreen", "Call clicked for ${member.name}")
+                            // TODO: Trigger call via callback
+                        },
+                        onMessage = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            Log.i("MeshRider:MapScreen", "Message clicked for ${member.name}")
+                        },
+                        modifier = Modifier.align(Alignment.BottomCenter)
                     )
+                }
+
+                // Bottom controls (hide when member is selected)
+                if (uiState.selectedMember == null) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                    ) {
+                        // Location sharing toggle
+                        LocationSharingCard(
+                            isSharing = uiState.isSharingLocation,
+                            onToggle = { viewModel.toggleLocationSharing() }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Quick actions
+                        MapQuickActions(
+                            onCenterOnMe = { viewModel.centerOnMyLocation() },
+                            onAddGeofence = { /* Open geofence dialog */ },
+                            onSOSAlert = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.activateSOS()
+                            }
+                        )
+                    }
                 }
 
                 // Legend
@@ -379,14 +426,14 @@ private fun MyLocationMarker(modifier: Modifier = Modifier) {
                 .size(24.dp)
                 .clip(CircleShape)
                 .background(PremiumColors.ElectricCyan)
-                .border(3.dp, Color.White, CircleShape),
+                .border(3.dp, PremiumColors.TextPrimary, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Navigation,
                 contentDescription = null,
                 modifier = Modifier.size(14.dp),
-                tint = Color.White
+                tint = PremiumColors.DeepSpace
             )
         }
     }
@@ -438,14 +485,14 @@ private fun TeamMemberMapMarker(
                     .size(20.dp)
                     .clip(CircleShape)
                     .background(markerColor)
-                    .border(2.dp, Color.White, CircleShape),
+                    .border(2.dp, PremiumColors.TextPrimary, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = member.name.take(1).uppercase(),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = PremiumColors.DeepSpace,
                     fontSize = 10.sp
                 )
             }
@@ -498,14 +545,14 @@ private fun SOSMarker(
                 .size(32.dp)
                 .clip(CircleShape)
                 .background(PremiumColors.BusyRed)
-                .border(3.dp, Color.White, CircleShape),
+                .border(3.dp, PremiumColors.TextPrimary, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = Color.White
+                tint = PremiumColors.TextPrimary
             )
         }
     }
@@ -710,7 +757,7 @@ private fun TeamMemberCard(
                     text = member.name.take(2).uppercase(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = PremiumColors.TextPrimary
                 )
             }
 
@@ -949,3 +996,241 @@ data class SOSAlertUiModel(
     val y: Float,
     val timestamp: Long
 )
+
+// ============================================================================
+// MEMBER DETAIL SHEET - Shows when a team member pin is clicked
+// ============================================================================
+
+/**
+ * Member detail sheet - shows when clicking a team member pin
+ * Displays member info with call/message actions
+ */
+@Composable
+private fun MemberDetailSheet(
+    member: TeamMemberLocationUiModel,
+    onDismiss: () -> Unit,
+    onCall: () -> Unit,
+    onMessage: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val statusColor = when (member.status) {
+        "ACTIVE" -> PremiumColors.OnlineGlow
+        "MOVING" -> PremiumColors.ConnectingAmber
+        "ALERT" -> PremiumColors.BusyRed
+        else -> PremiumColors.OfflineGray
+    }
+
+    GlassCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        cornerRadius = 24.dp,
+        borderColor = statusColor.copy(alpha = 0.5f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            // Header with close button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Avatar
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(PremiumColors.ElectricCyan, PremiumColors.HoloPurple)
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = member.name.take(2).uppercase(),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = PremiumColors.TextPrimary
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = member.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = PremiumColors.TextPrimary
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(statusColor)
+                            )
+                            Text(
+                                text = member.status,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = statusColor
+                            )
+                        }
+                    }
+                }
+
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = PremiumColors.TextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Location info
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                InfoItem(
+                    icon = Icons.Default.LocationOn,
+                    label = "Distance",
+                    value = "${member.distance}m away",
+                    color = PremiumColors.ElectricCyan
+                )
+                InfoItem(
+                    icon = Icons.Default.AccessTime,
+                    label = "Last Seen",
+                    value = member.lastUpdate,
+                    color = PremiumColors.TextSecondary
+                )
+                InfoItem(
+                    icon = Icons.Default.Explore,
+                    label = "Coords",
+                    value = "%.4f, %.4f".format(member.latitude, member.longitude),
+                    color = PremiumColors.HoloPurple
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Voice Call button
+                Button(
+                    onClick = onCall,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PremiumColors.ElectricCyan
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Call,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Call",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Video Call button
+                Button(
+                    onClick = onCall,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PremiumColors.HoloPurple
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Videocam,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Video",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Message button
+                OutlinedButton(
+                    onClick = onMessage,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        PremiumColors.TextSecondary
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Message,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = PremiumColors.TextPrimary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = color
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = PremiumColors.TextSecondary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = PremiumColors.TextPrimary,
+            textAlign = TextAlign.Center
+        )
+    }
+}

@@ -16,9 +16,13 @@
 
 package com.doodlelabs.meshriderwave.core.audio
 
+import android.content.Context
+import android.net.wifi.WifiManager
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
+import com.doodlelabs.meshriderwave.core.util.logI
 import com.doodlelabs.meshriderwave.core.util.logW
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.net.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -34,7 +38,9 @@ import javax.inject.Singleton
  * Implements RFC 3550 (RTP) and RFC 7587 (Opus RTP Payload)
  */
 @Singleton
-class RTPPacketManager @Inject constructor() {
+class RTPPacketManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
     companion object {
         // RTP Header Constants
@@ -90,6 +96,11 @@ class RTPPacketManager @Inject constructor() {
 
     // Network interface for multicast
     private var networkInterface: NetworkInterface? = null
+
+    // Jan 2026 CRITICAL FIX: WiFi multicast lock
+    // Without this, WiFi radio discards multicast packets (battery optimization)
+    // This is the #1 reason PTT audio fails to receive on WiFi networks
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     /**
      * RTP Packet structure
@@ -271,6 +282,11 @@ class RTPPacketManager @Inject constructor() {
      */
     fun initialize(interfaceName: String? = null): Boolean {
         return try {
+            // Jan 2026 CRITICAL FIX: Acquire WiFi multicast lock FIRST
+            // This prevents WiFi radio from discarding multicast packets
+            // Without this, multicast RX fails silently on most Android devices
+            acquireMulticastLock()
+
             // Find network interface
             networkInterface = if (interfaceName != null) {
                 NetworkInterface.getByName(interfaceName)
@@ -502,9 +518,62 @@ class RTPPacketManager @Inject constructor() {
             // Clear jitter buffers
             jitterBuffers.clear()
 
+            // Jan 2026 CRITICAL FIX: Release WiFi multicast lock
+            releaseMulticastLock()
+
             logD("RTP manager released")
         } catch (e: Exception) {
             logE("Error releasing RTP manager", e)
+        }
+    }
+
+    /**
+     * Acquire WiFi multicast lock to enable multicast packet reception
+     * Jan 2026: CRITICAL for PTT audio to work on WiFi
+     *
+     * Without this lock, Android's WiFi radio discards multicast packets
+     * to save battery. This is the #1 cause of "can't hear others" on WiFi.
+     */
+    private fun acquireMulticastLock() {
+        try {
+            if (multicastLock?.isHeld == true) {
+                logD("Multicast lock already held")
+                return
+            }
+
+            val wifiManager = context.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as? WifiManager
+
+            if (wifiManager == null) {
+                logW("WifiManager not available - multicast may not work on WiFi")
+                return
+            }
+
+            multicastLock = wifiManager.createMulticastLock("MeshRider:RTP").apply {
+                setReferenceCounted(false)  // Don't require matching release calls
+                acquire()
+            }
+
+            logI("WiFi multicast lock acquired - RTP reception enabled")
+        } catch (e: Exception) {
+            logE("Failed to acquire multicast lock", e)
+        }
+    }
+
+    /**
+     * Release WiFi multicast lock
+     */
+    private fun releaseMulticastLock() {
+        try {
+            multicastLock?.let { lock ->
+                if (lock.isHeld) {
+                    lock.release()
+                    logI("WiFi multicast lock released")
+                }
+            }
+            multicastLock = null
+        } catch (e: Exception) {
+            logE("Error releasing multicast lock", e)
         }
     }
 

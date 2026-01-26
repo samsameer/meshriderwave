@@ -113,6 +113,9 @@ class PeerDiscoveryManager @Inject constructor(
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var registeredServiceName: String? = null
 
+    // Own public key for self-filtering (Jan 2026)
+    private var ownPublicKeyHex: String? = null
+
     // ========== Service Registration ==========
 
     /**
@@ -124,6 +127,9 @@ class PeerDiscoveryManager @Inject constructor(
         port: Int,
         capabilities: Set<Capability> = Capability.all()
     ) {
+        // Store own public key for self-filtering (Jan 2026)
+        ownPublicKeyHex = publicKey.joinToString("") { "%02x".format(it) }
+
         if (_registrationState.value == RegistrationState.Registered) {
             Log.d(TAG, "Service already registered")
             return
@@ -384,6 +390,12 @@ class PeerDiscoveryManager @Inject constructor(
 
             val publicKey = android.util.Base64.decode(publicKeyB64, android.util.Base64.NO_WRAP)
             val hexKey = publicKey.toHexString()
+
+            // Skip self-discovery (Jan 2026) - don't show ourselves in nearby peers
+            if (hexKey == ownPublicKeyHex) {
+                Log.d(TAG, "Skipping self-discovery: ${info.serviceName}")
+                return
+            }
 
             // Parse capabilities
             val capabilities = capStr.split(",")

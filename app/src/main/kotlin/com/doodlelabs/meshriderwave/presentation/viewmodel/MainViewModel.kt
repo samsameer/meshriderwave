@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.doodlelabs.meshriderwave.core.discovery.BeaconManager
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
 import com.doodlelabs.meshriderwave.core.network.PeerDiscoveryManager
+import com.doodlelabs.meshriderwave.core.radio.RadioApiClient
 import com.doodlelabs.meshriderwave.domain.model.Contact
 import com.doodlelabs.meshriderwave.domain.repository.ContactRepository
 import com.doodlelabs.meshriderwave.domain.repository.SettingsRepository
@@ -40,7 +41,16 @@ data class MainUiState(
     val sosEnabled: Boolean = true,
     val autoReconnect: Boolean = true,
     val notificationsEnabled: Boolean = true,
-    val pttVibration: Boolean = true
+    val pttVibration: Boolean = true,
+    // Radio connection state (Jan 2026)
+    val radioIp: String = "10.223.232.1",  // Default MeshRider gateway IP
+    val radioConnected: Boolean = false,
+    val radioConnecting: Boolean = false,
+    val radioHostname: String = "",
+    val radioModel: String = "",
+    val radioSignal: Int = 0,
+    val radioNoise: Int = -95,
+    val radioError: String? = null
 ) {
     /**
      * Check if a contact is online based on discovered peers
@@ -57,7 +67,8 @@ class MainViewModel @Inject constructor(
     private val contactRepository: ContactRepository,
     private val meshNetworkManager: MeshNetworkManager,
     private val peerDiscoveryManager: PeerDiscoveryManager,
-    private val beaconManager: BeaconManager
+    private val beaconManager: BeaconManager,
+    private val radioApiClient: RadioApiClient  // Radio connection (Jan 2026)
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -68,6 +79,7 @@ class MainViewModel @Inject constructor(
         observeContacts()
         observeNetworkState()
         observeOnlinePeers()  // REAL online status (FIXED Jan 2026)
+        observeRadioState()   // Radio connection state (Jan 2026)
         initializeKeys()
     }
 
@@ -121,6 +133,7 @@ class MainViewModel @Inject constructor(
                 meshNetworkManager.isRunning,
                 meshNetworkManager.localAddresses
             ) { running, addresses ->
+                android.util.Log.d("MeshRider:MainVM", "Network state: running=$running, addresses=${addresses.size}")
                 _uiState.update {
                     it.copy(
                         isServiceRunning = running,
@@ -260,5 +273,106 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             contactRepository.deleteContact(publicKey)
         }
+    }
+
+    // ============================================================================
+    // RADIO CONNECTION (Jan 2026)
+    // ============================================================================
+
+    /**
+     * Observe radio API client connection state
+     */
+    private fun observeRadioState() {
+        viewModelScope.launch {
+            radioApiClient.connectionState.collect { state ->
+                when (state) {
+                    is RadioApiClient.ConnectionState.Disconnected -> {
+                        _uiState.update {
+                            it.copy(
+                                radioConnected = false,
+                                radioConnecting = false,
+                                radioHostname = "",
+                                radioModel = "",
+                                radioError = null
+                            )
+                        }
+                    }
+                    is RadioApiClient.ConnectionState.Connecting -> {
+                        _uiState.update {
+                            it.copy(
+                                radioConnecting = true,
+                                radioError = null
+                            )
+                        }
+                    }
+                    is RadioApiClient.ConnectionState.Connected -> {
+                        _uiState.update {
+                            it.copy(
+                                radioConnected = true,
+                                radioConnecting = false,
+                                radioIp = state.radioIp,
+                                radioHostname = state.radioInfo?.hostname ?: "",
+                                radioModel = state.radioInfo?.model ?: "",
+                                radioError = null
+                            )
+                        }
+                        // Fetch wireless status for signal info
+                        fetchRadioStatus()
+                    }
+                    is RadioApiClient.ConnectionState.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                radioConnected = false,
+                                radioConnecting = false,
+                                radioError = state.message
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Fetch radio wireless status (signal/noise)
+     */
+    private fun fetchRadioStatus() {
+        viewModelScope.launch {
+            val status = radioApiClient.getWirelessStatus()
+            status?.let {
+                _uiState.update { state ->
+                    state.copy(
+                        radioSignal = it.signal,
+                        radioNoise = it.noise
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Set radio IP address
+     */
+    fun setRadioIp(ip: String) {
+        _uiState.update { it.copy(radioIp = ip, radioError = null) }
+    }
+
+    /**
+     * Connect to MeshRider radio
+     */
+    fun connectToRadio() {
+        viewModelScope.launch {
+            val ip = _uiState.value.radioIp
+            if (ip.isNotBlank()) {
+                radioApiClient.connect(ip)
+            }
+        }
+    }
+
+    /**
+     * Disconnect from radio
+     */
+    fun disconnectFromRadio() {
+        radioApiClient.disconnect()
     }
 }

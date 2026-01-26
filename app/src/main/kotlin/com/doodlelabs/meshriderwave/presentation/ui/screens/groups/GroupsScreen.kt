@@ -128,7 +128,7 @@ fun GroupsScreen(
                         showCreateDialog = true
                     },
                     containerColor = PremiumColors.ElectricCyan,
-                    contentColor = Color.White
+                    contentColor = PremiumColors.DeepSpace
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Create Group")
                 }
@@ -274,7 +274,7 @@ private fun EmptyGroupsState(
                         imageVector = Icons.Outlined.Groups,
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
-                        tint = Color.White
+                        tint = PremiumColors.TextPrimary
                     )
                 }
 
@@ -382,7 +382,7 @@ private fun GroupCardWithCall(
                         imageVector = Icons.Default.Call,
                         contentDescription = null,
                         modifier = Modifier.size(12.dp),
-                        tint = Color.White
+                        tint = PremiumColors.DeepSpace
                     )
                 }
             }
@@ -474,7 +474,7 @@ private fun GroupCard(
                                 text = if (group.unreadCount > 9) "9+" else group.unreadCount.toString(),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
+                                color = PremiumColors.TextPrimary,
                                 fontSize = 10.sp
                             )
                         }
@@ -563,7 +563,7 @@ private fun GroupAvatar(name: String) {
             text = name.take(2).uppercase(),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = PremiumColors.TextPrimary
         )
     }
 }

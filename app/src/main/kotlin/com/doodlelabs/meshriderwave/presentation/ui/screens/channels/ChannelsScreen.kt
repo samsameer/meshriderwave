@@ -26,10 +26,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -45,6 +48,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.doodlelabs.meshriderwave.presentation.ui.components.*
 import com.doodlelabs.meshriderwave.presentation.ui.theme.PremiumColors
 import com.doodlelabs.meshriderwave.presentation.viewmodel.ChannelsViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,7 +59,27 @@ fun ChannelsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+
+    // Auto-refresh discovered channels periodically
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5000)  // Refresh UI every 5 seconds
+            viewModel.refreshChannels()
+        }
+    }
+
+    // Refresh animation
+    val refreshRotation by rememberInfiniteTransition(label = "refresh").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing)
+        ),
+        label = "rotation"
+    )
 
     DeepSpaceBackground {
         Scaffold(
@@ -69,11 +94,24 @@ fun ChannelsScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = PremiumColors.TextPrimary
                             )
-                            Text(
-                                text = "Push-to-Talk Communication",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = PremiumColors.TextSecondary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Push-to-Talk Communication",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = PremiumColors.TextSecondary
+                                )
+                                // Show discovered count
+                                if (uiState.discoveredChannels.isNotEmpty()) {
+                                    Text(
+                                        text = "• ${uiState.discoveredChannels.size} nearby",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = PremiumColors.ElectricCyan
+                                    )
+                                }
+                            }
                         }
                     },
                     navigationIcon = {
@@ -86,6 +124,26 @@ fun ChannelsScreen(
                         }
                     },
                     actions = {
+                        // Refresh button
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                scope.launch {
+                                    isRefreshing = true
+                                    viewModel.refreshChannels()
+                                    delay(1000)
+                                    isRefreshing = false
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh",
+                                tint = PremiumColors.TextSecondary,
+                                modifier = if (isRefreshing) Modifier.rotate(refreshRotation) else Modifier
+                            )
+                        }
+                        // Create button
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(
                                 Icons.Default.Add,
@@ -117,37 +175,77 @@ fun ChannelsScreen(
                     )
                 }
 
-                // Channel list
+                // Channel list - Scrollable with proper sections
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (uiState.channels.isEmpty()) {
+                    // Show empty state only if no channels at all
+                    if (uiState.channels.isEmpty() && uiState.discoveredChannels.isEmpty()) {
                         item {
                             EmptyChannelsState(
                                 onCreateClick = { showCreateDialog = true }
                             )
                         }
-                    } else {
+                    }
+
+                    // My Channels Section
+                    if (uiState.channels.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Available Channels",
+                                text = "MY CHANNELS",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Bold,
                                 color = PremiumColors.TextSecondary,
+                                letterSpacing = 1.sp,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
 
-                        items(uiState.channels) { channel ->
+                        items(
+                            items = uiState.channels,
+                            key = { "my_${it.id}" }
+                        ) { channel ->
                             ChannelCard(
                                 channel = channel,
                                 isJoined = uiState.joinedChannelIds.contains(channel.id),
                                 isActive = uiState.activeChannel?.id == channel.id,
                                 onJoin = { viewModel.joinChannel(channel.id) },
                                 onLeave = { viewModel.leaveChannel(channel.id) },
-                                onSetActive = { viewModel.setActiveChannel(channel.id) }
+                                onSetActive = { viewModel.setActiveChannel(channel.id) },
+                                onDelete = { viewModel.deleteChannel(channel.id) }
+                            )
+                        }
+                    }
+
+                    // Discovered Channels Section (from other devices)
+                    if (uiState.discoveredChannels.isNotEmpty()) {
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "DISCOVERED CHANNELS",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PremiumColors.ElectricCyan,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                            Text(
+                                text = "Channels shared by nearby devices",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = PremiumColors.TextSecondary,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
+                        items(
+                            items = uiState.discoveredChannels,
+                            key = { "disc_${it.id}" }
+                        ) { channel ->
+                            DiscoveredChannelCard(
+                                channel = channel,
+                                onJoin = { viewModel.joinDiscoveredChannel(channel.id) }
                             )
                         }
                     }
@@ -238,7 +336,7 @@ private fun ActiveChannelCard(
                             imageVector = Icons.Default.RecordVoiceOver,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
-                            tint = Color.White
+                            tint = PremiumColors.TextPrimary
                         )
                     }
 
@@ -329,7 +427,7 @@ private fun ActiveChannelCard(
                         imageVector = if (isTransmitting) Icons.Default.Mic else Icons.Default.MicNone,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
-                        tint = if (isTransmitting) Color.White else pttColor
+                        tint = if (isTransmitting) PremiumColors.DeepSpace else pttColor
                     )
 
                     if (isTransmitting) {
@@ -338,7 +436,7 @@ private fun ActiveChannelCard(
                             text = "TRANSMITTING",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = PremiumColors.DeepSpace,
                             fontSize = 10.sp
                         )
                     }
@@ -399,7 +497,7 @@ private fun TransmittingWaveform() {
 }
 
 /**
- * Channel card
+ * Channel card with delete support
  */
 @Composable
 private fun ChannelCard(
@@ -408,8 +506,11 @@ private fun ChannelCard(
     isActive: Boolean,
     onJoin: () -> Unit,
     onLeave: () -> Unit,
-    onSetActive: () -> Unit
+    onSetActive: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     val borderColor = when {
         isActive -> PremiumColors.ElectricCyan
         isJoined -> PremiumColors.LaserLime.copy(alpha = 0.5f)
@@ -521,32 +622,221 @@ private fun ChannelCard(
                 }
             }
 
-            // Join/Leave button
-            if (isJoined) {
-                IconButton(
-                    onClick = onLeave,
+            // Action buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Delete button (owner only, long press to confirm)
+                if (onDelete != null && isJoined) {
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showDeleteConfirm = true
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(PremiumColors.BusyRed.copy(alpha = 0.1f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = PremiumColors.BusyRed.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Join/Leave button
+                if (isJoined) {
+                    IconButton(
+                        onClick = onLeave,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(PremiumColors.BusyRed.copy(alpha = 0.2f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExitToApp,
+                            contentDescription = "Leave",
+                            tint = PremiumColors.BusyRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onJoin,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PremiumColors.ElectricCyan
+                        ),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text("Join", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteConfirm && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = {
+                Text(
+                    "Delete Channel",
+                    color = PremiumColors.TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Are you sure you want to delete \"${channel.name}\"? This action cannot be undone.",
+                    color = PremiumColors.TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PremiumColors.BusyRed
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel", color = PremiumColors.TextSecondary)
+                }
+            },
+            containerColor = PremiumColors.SpaceGray,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+/**
+ * Discovered channel card - shows channels from other devices
+ */
+@Composable
+private fun DiscoveredChannelCard(
+    channel: ChannelUiModel,
+    onJoin: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 16.dp,
+        borderColor = PremiumColors.ElectricCyan.copy(alpha = 0.3f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Channel icon with network indicator
+            Box {
+                Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
-                        .background(PremiumColors.BusyRed.copy(alpha = 0.2f))
+                        .background(PremiumColors.ElectricCyan.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ExitToApp,
-                        contentDescription = "Leave",
-                        tint = PremiumColors.BusyRed,
-                        modifier = Modifier.size(20.dp)
+                        imageVector = Icons.Default.Wifi,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = PremiumColors.ElectricCyan
                     )
                 }
-            } else {
-                Button(
-                    onClick = onJoin,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PremiumColors.ElectricCyan
-                    ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+
+                // Network badge
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .background(PremiumColors.LaserLime)
+                        .border(2.dp, PremiumColors.SpaceGray, CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Join", fontWeight = FontWeight.SemiBold)
+                    Icon(
+                        imageVector = Icons.Default.SignalCellularAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(10.dp),
+                        tint = PremiumColors.DeepSpace
+                    )
                 }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = channel.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PremiumColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Announcer name
+                    channel.announcerName?.let { announcer ->
+                        Text(
+                            text = "from $announcer",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PremiumColors.ElectricCyan
+                        )
+                    }
+
+                    // Member count
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.People,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = PremiumColors.TextSecondary
+                        )
+                        Text(
+                            text = "${channel.onlineCount} online",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PremiumColors.TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Join button
+            Button(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onJoin()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PremiumColors.ElectricCyan
+                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Join", fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -629,5 +919,8 @@ data class ChannelUiModel(
     val frequency: String,
     val onlineCount: Int,
     val priority: String,
-    val hasActivity: Boolean
+    val hasActivity: Boolean,
+    // Jan 2026: Network discovery fields
+    val isDiscovered: Boolean = false,  // true if discovered from another device
+    val announcerName: String? = null   // name of peer who announced this channel
 )

@@ -50,7 +50,10 @@ sealed class Screen(val route: String) {
 fun MeshRiderNavGraph(
     navController: NavHostController,
     onStartCall: (String) -> Unit,
-    onStartVideoCall: (String) -> Unit = onStartCall  // Default to same handler for backwards compatibility
+    onStartVideoCall: (String) -> Unit = onStartCall,  // Default to same handler for backwards compatibility
+    // Direct peer calling (Jan 2026) - for discovered peers without saved contact
+    onStartCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> },
+    onStartVideoCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> }
 ) {
     NavHost(
         navController = navController,
@@ -76,7 +79,10 @@ fun MeshRiderNavGraph(
                 onNavigateToMap = { navController.navigate(Screen.Map.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
-                onStartCall = onStartCall
+                onStartCall = onStartCall,
+                // Direct peer calling (Jan 2026) - one-tap calling from NEARBY PEERS
+                onStartCallToPeer = onStartCallToPeer,
+                onStartVideoCallToPeer = onStartVideoCallToPeer
             )
         }
 

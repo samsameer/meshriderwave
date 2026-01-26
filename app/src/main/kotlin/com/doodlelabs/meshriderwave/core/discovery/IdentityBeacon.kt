@@ -56,6 +56,13 @@ data class IdentityBeacon(
     val timestamp: Long,
     val capabilities: Set<Capability>,
     val networkType: NetworkType,
+    // Blue Force Tracking (Jan 2026) - GPS coordinates for situational awareness
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val altitude: Float? = null,
+    val speed: Float? = null,        // m/s
+    val bearing: Float? = null,      // degrees
+    val locationAccuracy: Float? = null,  // meters
     val signature: String = ""  // Base64 encoded, empty before signing
 ) {
     companion object {
@@ -84,19 +91,35 @@ data class IdentityBeacon(
         /**
          * Create a beacon (unsigned).
          * Call sign() to add signature before broadcasting.
+         *
+         * @param latitude GPS latitude (optional, for Blue Force Tracking)
+         * @param longitude GPS longitude (optional, for Blue Force Tracking)
          */
         fun create(
             publicKey: ByteArray,
             name: String,
             capabilities: Set<Capability>,
-            networkType: NetworkType
+            networkType: NetworkType,
+            // Blue Force Tracking location (Jan 2026)
+            latitude: Double? = null,
+            longitude: Double? = null,
+            altitude: Float? = null,
+            speed: Float? = null,
+            bearing: Float? = null,
+            locationAccuracy: Float? = null
         ): IdentityBeacon {
             return IdentityBeacon(
                 publicKey = Base64.encodeToString(publicKey, Base64.NO_WRAP),
                 name = name.take(MAX_NAME_LENGTH),
                 timestamp = System.currentTimeMillis(),
                 capabilities = capabilities,
-                networkType = networkType
+                networkType = networkType,
+                latitude = latitude,
+                longitude = longitude,
+                altitude = altitude,
+                speed = speed,
+                bearing = bearing,
+                locationAccuracy = locationAccuracy
             )
         }
 
@@ -190,6 +213,13 @@ data class IdentityBeacon(
      */
     val ageMs: Long
         get() = System.currentTimeMillis() - timestamp
+
+    /**
+     * Check if beacon has valid location data.
+     */
+    fun hasLocation(): Boolean {
+        return latitude != null && longitude != null
+    }
 }
 
 /**

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,6 +52,7 @@ import com.doodlelabs.meshriderwave.R
 import com.doodlelabs.meshriderwave.presentation.LocalWindowWidthSizeClass
 import com.doodlelabs.meshriderwave.presentation.ui.theme.PremiumColors
 import com.doodlelabs.meshriderwave.presentation.viewmodel.DashboardViewModel
+import com.doodlelabs.meshriderwave.presentation.viewmodel.NearbyPeerUiState
 
 // Starlink Professional Color Palette - Monochrome + Single Accent
 object TacticalColors {
@@ -98,6 +100,9 @@ fun TacticalDashboardScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToContacts: () -> Unit,
     onStartCall: (String) -> Unit,
+    // Military-Grade Jan 2026: Direct peer calling without QR exchange
+    onStartCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> },
+    onStartVideoCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> },
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -172,14 +177,59 @@ fun TacticalDashboardScreen(
                 TacticalActionsGrid(
                     onSOSClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        android.util.Log.i("MeshRider:Dashboard", "SOS button clicked")
                         viewModel.activateSOS()
                     },
-                    onMapClick = onNavigateToMap,
-                    onPTTClick = onNavigateToChannels,
-                    onContactsClick = onNavigateToContacts,
+                    onMapClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        android.util.Log.i("MeshRider:Dashboard", "MAP button clicked")
+                        onNavigateToMap()
+                    },
+                    onPTTClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        android.util.Log.i("MeshRider:Dashboard", "PTT button clicked")
+                        onNavigateToChannels()
+                    },
+                    onContactsClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        android.util.Log.i("MeshRider:Dashboard", "CONTACTS button clicked")
+                        onNavigateToContacts()
+                    },
                     hasActiveAlert = uiState.hasActiveSOS,
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
+            }
+
+            // NEARBY PEERS - Military Grade Direct Calling (Jan 2026)
+            // One-tap calling to discovered peers without QR exchange
+            if (uiState.nearbyPeers.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    SectionLabel(
+                        text = "NEARBY PEERS (${uiState.nearbyPeers.size})",
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                items(
+                    items = uiState.nearbyPeers.take(10),
+                    key = { it.publicKeyHex }
+                ) { peer ->
+                    NearbyPeerCard(
+                        peer = peer,
+                        onVoiceCall = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            android.util.Log.i("MeshRider:Dashboard", "Voice call clicked for ${peer.name} at ${peer.ipAddress}")
+                            onStartCallToPeer(peer.publicKey, peer.ipAddress, peer.name)
+                        },
+                        onVideoCall = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            android.util.Log.i("MeshRider:Dashboard", "Video call clicked for ${peer.name} at ${peer.ipAddress}")
+                            onStartVideoCallToPeer(peer.publicKey, peer.ipAddress, peer.name)
+                        },
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                    )
+                }
             }
 
             // Radio Status (when connected)
@@ -201,15 +251,52 @@ fun TacticalDashboardScreen(
             // Blue Force Tracking Mini-Map
             item {
                 Spacer(modifier = Modifier.height(24.dp))
-                SectionLabel("SITUATIONAL AWARENESS", Modifier.padding(horizontal = 20.dp))
+                SectionLabel("SITUATIONAL AWARENESS (${uiState.trackedTeamMembers.size})", Modifier.padding(horizontal = 20.dp))
                 Spacer(modifier = Modifier.height(12.dp))
                 TacticalRadarCard(
                     trackedMembers = uiState.trackedTeamMembers,
                     myLatitude = uiState.myLatitude,
                     myLongitude = uiState.myLongitude,
-                    onClick = onNavigateToMap,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        android.util.Log.i("MeshRider:Dashboard", "RADAR clicked - navigating to map")
+                        onNavigateToMap()
+                    },
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
+            }
+
+            // Team Members List - Clickable cards for each tracked member
+            // ATAK-style BFT with call actions
+            if (uiState.trackedTeamMembers.isNotEmpty()) {
+                items(
+                    items = uiState.trackedTeamMembers,
+                    key = { it.id }
+                ) { member ->
+                    TrackedMemberCard(
+                        member = member,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            android.util.Log.i("MeshRider:Dashboard", "Team member clicked: ${member.name} (${member.id}) - navigating to map")
+                            onNavigateToMap()
+                        },
+                        onVoiceCall = if (member.ipAddress != null && member.publicKey != null) {
+                            {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                android.util.Log.i("MeshRider:Dashboard", "Voice call to team member: ${member.name} at ${member.ipAddress}")
+                                onStartCallToPeer(member.publicKey, member.ipAddress, member.name)
+                            }
+                        } else null,
+                        onVideoCall = if (member.ipAddress != null && member.publicKey != null) {
+                            {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                android.util.Log.i("MeshRider:Dashboard", "Video call to team member: ${member.name} at ${member.ipAddress}")
+                                onStartVideoCallToPeer(member.publicKey, member.ipAddress, member.name)
+                            }
+                        } else null,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                    )
+                }
             }
 
             // Active Channels
@@ -1062,14 +1149,19 @@ private fun TacticalRadarCard(
                         val memberX = center.x + (displayRadius * kotlin.math.sin(angle)).toFloat()
                         val memberY = center.y - (displayRadius * kotlin.math.cos(angle)).toFloat()
 
-                        // Draw member dot
+                        // Draw member dot - ATAK-style status colors
+                        val memberColor = when (member.status) {
+                            MemberStatus.SOS -> TacticalColors.Critical
+                            MemberStatus.MOVING -> TacticalColors.AccentBright
+                            MemberStatus.ACTIVE -> TacticalColors.Accent
+                            MemberStatus.STALE -> TacticalColors.TextSecondary
+                            MemberStatus.OFFLINE -> TacticalColors.TextMuted
+                        }
+                        // SOS members get larger dot (8f) for visibility
+                        val dotRadius = if (member.status == MemberStatus.SOS) 8f else 5f
                         drawCircle(
-                            color = when (member.status) {
-                                "MOVING" -> TacticalColors.AccentBright
-                                "ACTIVE" -> TacticalColors.Accent
-                                else -> TacticalColors.AccentDim
-                            },
-                            radius = 5f,
+                            color = memberColor,
+                            radius = dotRadius,
                             center = Offset(memberX, memberY)
                         )
                     }
@@ -1299,4 +1391,435 @@ private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         letterSpacing = 2.sp,
         modifier = modifier
     )
+}
+
+// ============================================================================
+// NEARBY PEER CARD - Military Grade Direct Calling (Jan 2026)
+// ============================================================================
+
+/**
+ * Military-grade Nearby Peer Card with one-tap calling
+ * Shows discovered peers with voice/video call buttons
+ * No QR exchange required - uses discovery publicKey for E2E encryption
+ */
+@Composable
+private fun NearbyPeerCard(
+    peer: NearbyPeerUiState,
+    onVoiceCall: () -> Unit,
+    onVideoCall: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Calculate freshness (how recently seen)
+    val freshness = remember(peer.lastSeenMs) {
+        val ageMs = System.currentTimeMillis() - peer.lastSeenMs
+        when {
+            ageMs < 10_000 -> "LIVE"      // < 10s
+            ageMs < 30_000 -> "RECENT"    // < 30s
+            ageMs < 60_000 -> "ACTIVE"    // < 1min
+            else -> "STALE"
+        }
+    }
+
+    val freshnessColor = when (freshness) {
+        "LIVE" -> TacticalColors.Accent
+        "RECENT" -> TacticalColors.AccentDim
+        "ACTIVE" -> TacticalColors.TextSecondary
+        else -> TacticalColors.TextMuted
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(TacticalColors.Surface)
+            .border(1.dp, TacticalColors.BorderSubtle, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Status indicator + Icon
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(freshnessColor.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            // Live indicator dot
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 4.dp, y = (-4).dp)
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(freshnessColor)
+            )
+            Icon(
+                Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = freshnessColor
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        // Peer info
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = peer.name.uppercase(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.TextPrimary,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1
+                )
+                // Freshness badge
+                Text(
+                    text = freshness,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = freshnessColor,
+                    fontSize = 9.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Short ID + Network type
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = peer.shortId,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.TextMuted,
+                    fontSize = 10.sp
+                )
+                Text(
+                    text = "|",
+                    color = TacticalColors.TextMuted,
+                    fontSize = 10.sp
+                )
+                Text(
+                    text = peer.networkType,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.AccentDim,
+                    fontSize = 10.sp
+                )
+            }
+
+            // IP Address
+            Text(
+                text = peer.ipAddress,
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = TacticalColors.TextMuted,
+                fontSize = 10.sp
+            )
+        }
+
+        // Call buttons
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Voice call button
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TacticalColors.Accent.copy(alpha = 0.15f))
+                    .border(1.dp, TacticalColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .clickable(onClick = onVoiceCall),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Call,
+                    contentDescription = "Voice Call",
+                    modifier = Modifier.size(20.dp),
+                    tint = TacticalColors.Accent
+                )
+            }
+
+            // Video call button
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TacticalColors.AccentBright.copy(alpha = 0.15f))
+                    .border(1.dp, TacticalColors.AccentBright.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .clickable(onClick = onVideoCall),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Videocam,
+                    contentDescription = "Video Call",
+                    modifier = Modifier.size(20.dp),
+                    tint = TacticalColors.AccentBright
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TRACKED MEMBER CARD - ATAK-Style Blue Force Tracking
+// ============================================================================
+
+/**
+ * Tracked Team Member Card - Shows individual team member with status
+ * Military-grade Blue Force Tracking list item
+ *
+ * Features:
+ * - ATAK-compatible status colors (SOS=red, MOVING=bright cyan, ACTIVE=cyan, STALE=gray)
+ * - Distance and bearing from my position
+ * - Age indicator (time since last update)
+ * - Call action buttons (voice/video) when IP available
+ * - Map navigation on tap
+ */
+@Composable
+private fun TrackedMemberCard(
+    member: TrackedMemberUiState,
+    onClick: () -> Unit,
+    onVoiceCall: (() -> Unit)? = null,
+    onVideoCall: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    // ATAK-style status colors
+    val statusColor = when (member.status) {
+        MemberStatus.SOS -> TacticalColors.Critical      // Red - Emergency
+        MemberStatus.MOVING -> TacticalColors.AccentBright  // Bright cyan - In motion
+        MemberStatus.ACTIVE -> TacticalColors.Accent        // Cyan - Online, stationary
+        MemberStatus.STALE -> TacticalColors.TextSecondary  // Gray - No recent update
+        MemberStatus.OFFLINE -> TacticalColors.TextMuted    // Dark gray - Offline
+    }
+
+    // Status icon based on state - ATAK-style
+    @Suppress("DEPRECATION")
+    val statusIcon = when (member.status) {
+        MemberStatus.SOS -> Icons.Default.Warning
+        MemberStatus.MOVING -> Icons.Default.DirectionsWalk  // In motion
+        MemberStatus.ACTIVE -> Icons.Default.MyLocation      // Online, stationary
+        MemberStatus.STALE -> Icons.Default.AccessTime       // No recent update
+        MemberStatus.OFFLINE -> Icons.Default.SignalWifiOff  // Offline
+    }
+
+    // Calculate age string
+    val ageText = remember(member.lastSeenMs) {
+        val ageMs = System.currentTimeMillis() - member.lastSeenMs
+        when {
+            ageMs < 30_000 -> "NOW"
+            ageMs < 60_000 -> "${ageMs / 1000}s"
+            ageMs < 3600_000 -> "${ageMs / 60_000}m"
+            else -> "${ageMs / 3600_000}h"
+        }
+    }
+
+    // Format distance
+    val distanceText = remember(member.distanceMeters) {
+        when {
+            member.distanceMeters < 1 -> "0m"
+            member.distanceMeters < 1000 -> "${member.distanceMeters.toInt()}m"
+            else -> "%.1fkm".format(member.distanceMeters / 1000)
+        }
+    }
+
+    // Format bearing
+    val bearingText = remember(member.bearingDegrees) {
+        val directions = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        val index = ((member.bearingDegrees + 22.5) / 45).toInt() % 8
+        "${member.bearingDegrees.toInt()}° ${directions[index]}"
+    }
+
+    // SOS pulsing animation
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(
+        androidx.lifecycle.Lifecycle.State.RESUMED
+    )
+    val sosAlpha = if (member.status == MemberStatus.SOS && isResumed) {
+        val infiniteTransition = rememberInfiniteTransition(label = "sos")
+        infiniteTransition.animateFloat(
+            initialValue = 0.5f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(500),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "sosAlpha"
+        ).value
+    } else 1f
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(TacticalColors.Surface)
+            .border(
+                width = if (member.status == MemberStatus.SOS) 2.dp else 1.dp,
+                color = if (member.status == MemberStatus.SOS)
+                    statusColor.copy(alpha = sosAlpha)
+                else TacticalColors.BorderSubtle,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Status indicator + Icon
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(statusColor.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            // Status dot with animation for SOS
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 4.dp, y = (-4).dp)
+                    .size(if (member.status == MemberStatus.SOS) 12.dp else 10.dp)
+                    .clip(CircleShape)
+                    .background(statusColor.copy(alpha = if (member.status == MemberStatus.SOS) sosAlpha else 1f))
+            )
+            Icon(
+                statusIcon,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = statusColor
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        // Member info
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = member.name.uppercase(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.TextPrimary,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1
+                )
+                // Status badge
+                Text(
+                    text = member.status.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = statusColor,
+                    fontSize = 9.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Distance, Bearing, Age
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = distanceText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.Accent,
+                    fontSize = 10.sp
+                )
+                Text("•", color = TacticalColors.TextMuted, fontSize = 10.sp)
+                Text(
+                    text = bearingText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 10.sp
+                )
+                Text("•", color = TacticalColors.TextMuted, fontSize = 10.sp)
+                Text(
+                    text = ageText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = TacticalColors.TextMuted,
+                    fontSize = 10.sp
+                )
+            }
+
+            // Coordinates (compact)
+            Text(
+                text = "%.4f, %.4f".format(member.latitude, member.longitude),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = TacticalColors.TextMuted,
+                fontSize = 9.sp
+            )
+        }
+
+        // Call buttons (if IP available)
+        if (member.ipAddress != null && member.status != MemberStatus.OFFLINE) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Voice call
+                if (onVoiceCall != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(TacticalColors.Accent.copy(alpha = 0.15f))
+                            .border(1.dp, TacticalColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .clickable(onClick = onVoiceCall),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Call,
+                            contentDescription = "Voice Call",
+                            modifier = Modifier.size(18.dp),
+                            tint = TacticalColors.Accent
+                        )
+                    }
+                }
+                // Video call
+                if (onVideoCall != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(TacticalColors.AccentBright.copy(alpha = 0.15f))
+                            .border(1.dp, TacticalColors.AccentBright.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .clickable(onClick = onVideoCall),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Videocam,
+                            contentDescription = "Video Call",
+                            modifier = Modifier.size(18.dp),
+                            tint = TacticalColors.AccentBright
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // Navigate to map indicator
+        Icon(
+            Icons.Default.Map,
+            contentDescription = "View on Map",
+            modifier = Modifier.size(20.dp),
+            tint = TacticalColors.TextMuted
+        )
+    }
 }

@@ -68,7 +68,9 @@ class BeaconManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val cryptoManager: CryptoManager,
     private val settingsDataStore: SettingsDataStore,
-    private val networkTypeDetector: NetworkTypeDetector
+    private val networkTypeDetector: NetworkTypeDetector,
+    // Blue Force Tracking (Jan 2026) - inject for bidirectional location sharing
+    private val locationSharingManager: com.doodlelabs.meshriderwave.core.location.LocationSharingManager
 ) {
     companion object {
         private const val TAG = "BeaconManager"
@@ -308,12 +310,22 @@ class BeaconManager @Inject constructor(
             return
         }
 
-        // Build beacon
+        // Blue Force Tracking (Jan 2026): Get current location for beacon
+        val myLocation = locationSharingManager.myLocation.value
+
+        // Build beacon with location data
         val beacon = IdentityBeacon.create(
             publicKey = publicKey,
             name = username,
             capabilities = getLocalCapabilities(),
-            networkType = networkTypeDetector.currentNetworkType.value
+            networkType = networkTypeDetector.currentNetworkType.value,
+            // Include GPS coordinates for situational awareness
+            latitude = myLocation?.latitude,
+            longitude = myLocation?.longitude,
+            altitude = myLocation?.altitude,
+            speed = myLocation?.speed,
+            bearing = myLocation?.bearing,
+            locationAccuracy = myLocation?.accuracy
         )
 
         // Sign beacon
@@ -413,7 +425,13 @@ class BeaconManager @Inject constructor(
                     networkType = beacon.networkType,
                     capabilities = beacon.capabilities,
                     lastSeenAt = System.currentTimeMillis(),
-                    beaconTimestamp = beacon.timestamp
+                    beaconTimestamp = beacon.timestamp,
+                    // Blue Force Tracking (Jan 2026) - include location
+                    latitude = beacon.latitude,
+                    longitude = beacon.longitude,
+                    altitude = beacon.altitude,
+                    speed = beacon.speed,
+                    bearing = beacon.bearing
                 )
 
                 val keyHex = peer.publicKey.toHexString()
@@ -422,6 +440,26 @@ class BeaconManager @Inject constructor(
 
                 // Emit discovery event
                 _peerDiscoveredEvent.tryEmit(peer)
+
+                // Blue Force Tracking (Jan 2026): Update team location for map
+                if (beacon.hasLocation()) {
+                    locationSharingManager.updateTeamLocation(
+                        publicKey = beacon.getPublicKeyBytes(),
+                        name = beacon.name,
+                        location = com.doodlelabs.meshriderwave.core.location.TrackedLocation(
+                            latitude = beacon.latitude!!,
+                            longitude = beacon.longitude!!,
+                            altitude = beacon.altitude ?: 0f,
+                            accuracy = beacon.locationAccuracy ?: 0f,
+                            speed = beacon.speed ?: 0f,
+                            bearing = beacon.bearing ?: 0f,
+                            timestamp = beacon.timestamp,
+                            memberName = beacon.name,
+                            memberPublicKey = beacon.getPublicKeyBytes()
+                        )
+                    )
+                    Log.d(TAG, "Updated team location for ${beacon.name}: ${beacon.latitude}, ${beacon.longitude}")
+                }
 
                 Log.d(TAG, "Discovered peer: ${peer.name} at $senderAddress (${keyHex.take(8)})")
             }
@@ -507,8 +545,16 @@ data class DiscoveredPeer(
     val networkType: com.doodlelabs.meshriderwave.domain.model.NetworkType,
     val capabilities: Set<Capability>,
     val lastSeenAt: Long,
-    val beaconTimestamp: Long
+    val beaconTimestamp: Long,
+    // Blue Force Tracking (Jan 2026) - GPS location
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val altitude: Float? = null,
+    val speed: Float? = null,
+    val bearing: Float? = null
 ) {
+    /** Check if this peer has valid location data */
+    fun hasLocation(): Boolean = latitude != null && longitude != null
     val publicKeyHex: String
         get() = publicKey.joinToString("") { "%02x".format(it) }
 

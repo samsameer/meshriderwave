@@ -624,8 +624,24 @@ class SOSManager @Inject constructor(
 
     // ========== Helpers ==========
 
+    /**
+     * Check if a team member has an active SOS alert
+     * Jan 2026: Used by DashboardViewModel for ATAK-style BFT status
+     *
+     * @param publicKeyHex The public key hex string of the member to check
+     * @return true if member has an active SOS alert
+     */
+    fun isMemberInSOS(publicKeyHex: String): Boolean {
+        return _activeAlerts.value.any { alert ->
+            alert.senderKey.toHexString().equals(publicKeyHex, ignoreCase = true)
+        }
+    }
+
     private fun ByteArray.toBase64(): String =
         android.util.Base64.encodeToString(this, android.util.Base64.NO_WRAP)
+
+    private fun ByteArray.toHexString(): String =
+        joinToString("") { "%02x".format(it) }
 }
 
 // ========== Data Classes ==========

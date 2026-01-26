@@ -224,6 +224,12 @@ interface PTTChannelRepository {
      */
     suspend fun deleteChannel(channelId: ByteArray): Result<Unit>
 
+    /**
+     * Add or update a channel (for importing discovered channels)
+     * Jan 2026: Added for network channel discovery
+     */
+    suspend fun addOrUpdateChannel(channel: PTTChannel): Result<Unit>
+
     // ========== Membership ==========
 
     /**

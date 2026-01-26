@@ -121,10 +121,9 @@ fun ContactsScreen(
                             color = PremiumColors.TextSecondary
                         )
 
-                        // Online count
+                        // Online count - use real discovery data from MainViewModel
                         val onlineCount = filteredContacts.count { contact ->
-                            contact.lastSeenAt != null &&
-                                    System.currentTimeMillis() - (contact.lastSeenAt ?: 0) < 60_000
+                            uiState.isContactOnline(contact)
                         }
                         if (onlineCount > 0) {
                             PremiumChip(
@@ -149,8 +148,11 @@ fun ContactsScreen(
                     ) {
                         items(filteredContacts, key = { it.deviceId }) { contact ->
                             val publicKeyHex = contact.publicKey.joinToString("") { "%02x".format(it) }
+                            // Use real discovery data for online status
+                            val isOnline = uiState.isContactOnline(contact)
                             PremiumContactListItem(
                                 contact = contact,
+                                isOnline = isOnline,
                                 onCall = { onStartCall(contact.deviceId) },
                                 onVideoCall = { onStartVideoCall(contact.deviceId) },
                                 onClick = { onContactClick(publicKeyHex) }
@@ -292,19 +294,16 @@ private fun PremiumSearchBar(
 
 /**
  * Premium Contact List Item
+ * FIXED Jan 2026: Use real discovery-based online status instead of timestamp
  */
 @Composable
 private fun PremiumContactListItem(
     contact: Contact,
+    isOnline: Boolean,
     onCall: () -> Unit,
     onVideoCall: () -> Unit,
     onClick: () -> Unit
 ) {
-    val isOnline = remember(contact.lastSeenAt) {
-        contact.lastSeenAt != null &&
-                System.currentTimeMillis() - (contact.lastSeenAt ?: 0) < 60_000
-    }
-
     val contactStatus = if (isOnline) ContactStatus.ONLINE else ContactStatus.OFFLINE
 
     GlassCard(

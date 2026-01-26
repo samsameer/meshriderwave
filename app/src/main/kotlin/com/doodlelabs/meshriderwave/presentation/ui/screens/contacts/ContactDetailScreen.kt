@@ -394,7 +394,7 @@ private fun PremiumActionButton(
                     imageVector = icon,
                     contentDescription = label,
                     modifier = Modifier.size(28.dp),
-                    tint = Color.White
+                    tint = PremiumColors.TextPrimary
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))

@@ -86,6 +86,13 @@ class MainActivity : ComponentActivity() {
                             },
                             onStartVideoCall = { contactId ->
                                 startCallActivity(contactId, isVideoCall = true)
+                            },
+                            // Direct peer calling (Jan 2026) - one-tap calling from NEARBY PEERS
+                            onStartCallToPeer = { publicKey, ipAddress, name ->
+                                startDirectPeerCall(publicKey, ipAddress, name, isVideoCall = false)
+                            },
+                            onStartVideoCallToPeer = { publicKey, ipAddress, name ->
+                                startDirectPeerCall(publicKey, ipAddress, name, isVideoCall = true)
                             }
                         )
                     }
@@ -139,6 +146,30 @@ class MainActivity : ComponentActivity() {
 
     private fun startVideoCallActivity(contactId: String) {
         startCallActivity(contactId, isVideoCall = true)
+    }
+
+    /**
+     * Direct peer calling (Jan 2026) - for discovered peers without saved contact
+     * Enables one-tap calling from NEARBY PEERS section
+     */
+    private fun startDirectPeerCall(
+        publicKey: ByteArray,
+        ipAddress: String,
+        name: String,
+        isVideoCall: Boolean = false
+    ) {
+        logD("Starting direct peer call to $name at $ipAddress")
+        val intent = Intent(this, CallActivity::class.java).apply {
+            putExtra(CallActivity.EXTRA_IS_OUTGOING, true)
+            putExtra(CallActivity.EXTRA_IS_VIDEO_CALL, isVideoCall)
+            putExtra(
+                CallActivity.EXTRA_PEER_PUBLIC_KEY,
+                android.util.Base64.encodeToString(publicKey, android.util.Base64.NO_WRAP)
+            )
+            putExtra(CallActivity.EXTRA_PEER_IP_ADDRESS, ipAddress)
+            putExtra(CallActivity.EXTRA_PEER_NAME, name)
+        }
+        startActivity(intent)
     }
 
     override fun onDestroy() {

@@ -93,28 +93,55 @@ class DashboardViewModel @Inject constructor(
         }
 
         // Combine mDNS and beacon discoveries for accurate peer count
-        // Military-grade Jan 2026: Use both discovery sources
+        // Military-grade Jan 2026: Use both discovery sources + build nearby peers list
         viewModelScope.launch {
             combine(
                 peerDiscoveryManager.discoveredPeers,
                 beaconManager.discoveredPeersFlow
             ) { mdnsPeers, beaconPeers ->
                 // Merge peers by public key (deduplicate)
-                val allPeerKeys = mutableSetOf<String>()
+                // Prefer beacon data as it has more info (signed, verified)
+                val mergedPeers = mutableMapOf<String, NearbyPeerUiState>()
 
-                // Add mDNS peers
-                mdnsPeers.keys.forEach { allPeerKeys.add(it) }
+                // Add beacon peers first (higher priority)
+                beaconPeers.values.forEach { peer ->
+                    mergedPeers[peer.publicKeyHex] = NearbyPeerUiState(
+                        publicKeyHex = peer.publicKeyHex,
+                        publicKey = peer.publicKey,
+                        name = peer.name,
+                        ipAddress = peer.address,
+                        shortId = peer.shortId,
+                        networkType = peer.networkType.name,
+                        isSavedContact = false,  // TODO: Check against contacts
+                        lastSeenMs = peer.lastSeenAt
+                    )
+                }
 
-                // Add beacon peers
-                beaconPeers.keys.forEach { allPeerKeys.add(it) }
+                // Add mDNS peers (if not already from beacon)
+                mdnsPeers.values.forEach { peer ->
+                    if (!mergedPeers.containsKey(peer.publicKeyHex)) {
+                        mergedPeers[peer.publicKeyHex] = NearbyPeerUiState(
+                            publicKeyHex = peer.publicKeyHex,
+                            publicKey = peer.publicKey,
+                            name = peer.name,
+                            ipAddress = peer.addresses.firstOrNull() ?: "",
+                            shortId = peer.shortId,
+                            networkType = peer.networkType.name,
+                            isSavedContact = false,
+                            lastSeenMs = peer.lastSeenAt
+                        )
+                    }
+                }
 
-                allPeerKeys.size
-            }.collect { totalPeers ->
+                // Sort by last seen (most recent first)
+                mergedPeers.values.sortedByDescending { it.lastSeenMs }
+            }.collect { nearbyPeersList ->
                 _uiState.update { state ->
                     state.copy(
-                        discoveredPeers = totalPeers,
-                        meshNodes = totalPeers,
-                        signalStrength = calculateSignalStrength(totalPeers)
+                        discoveredPeers = nearbyPeersList.size,
+                        nearbyPeers = nearbyPeersList,
+                        meshNodes = nearbyPeersList.size,
+                        signalStrength = calculateSignalStrength(nearbyPeersList.size)
                     )
                 }
             }
@@ -183,24 +210,100 @@ class DashboardViewModel @Inject constructor(
             }
         }
 
-        // Observe team member locations
+        // Observe team member locations - ATAK-style Blue Force Tracking
+        // Combined with peer discovery for IP addresses (Jan 2026)
         viewModelScope.launch {
-            locationSharingManager.teamLocations.collect { locations ->
-                val trackedMembers = locations.map { (hexKey, location) ->
+            combine(
+                locationSharingManager.teamLocations,
+                peerDiscoveryManager.discoveredPeers,
+                beaconManager.discoveredPeersFlow
+            ) { locations, mdnsPeers, beaconPeers ->
+                Log.d(TAG, "Team locations update: ${locations.size} members, ${mdnsPeers.size} mDNS, ${beaconPeers.size} beacon")
+                val myLat = _uiState.value.myLatitude
+                val myLon = _uiState.value.myLongitude
+                val now = System.currentTimeMillis()
+
+                // Build a map of public key hex -> IP address from both discovery sources
+                val peerIpMap = mutableMapOf<String, String>()
+                beaconPeers.values.forEach { peer ->
+                    peerIpMap[peer.publicKeyHex] = peer.address
+                }
+                mdnsPeers.values.forEach { peer ->
+                    if (!peerIpMap.containsKey(peer.publicKeyHex)) {
+                        peer.addresses.firstOrNull()?.let { ip ->
+                            peerIpMap[peer.publicKeyHex] = ip
+                        }
+                    }
+                }
+
+                locations.map { (hexKey, location) ->
+                    val displayName = location.memberName ?: "Team ${hexKey.take(4).uppercase()}"
+
+                    // Calculate distance and bearing from my position
+                    val distanceMeters = if (myLat != 0.0 && myLon != 0.0) {
+                        calculateDistance(myLat, myLon, location.latitude, location.longitude)
+                    } else 0.0
+
+                    val bearingDeg = if (myLat != 0.0 && myLon != 0.0) {
+                        calculateBearing(myLat, myLon, location.latitude, location.longitude)
+                    } else 0f
+
+                    // Determine member status (ATAK-style)
+                    val ageMs = now - location.timestamp
+                    val status = when {
+                        sosManager.isMemberInSOS(hexKey) -> MemberStatus.SOS
+                        ageMs > 5 * 60 * 1000 -> MemberStatus.OFFLINE  // 5 min stale
+                        ageMs > 2 * 60 * 1000 -> MemberStatus.STALE    // 2 min stale
+                        location.speed > 2.0f -> MemberStatus.MOVING   // > 2 m/s
+                        else -> MemberStatus.ACTIVE
+                    }
+
+                    // Get IP address from peer discovery (enables direct calling)
+                    val ipAddress = peerIpMap[hexKey]
+
+                    Log.d(TAG, "  Member $hexKey: $displayName status=$status dist=${distanceMeters.toInt()}m bearing=${bearingDeg.toInt()}° ip=$ipAddress")
+
                     TrackedMemberUiState(
                         id = hexKey,
-                        name = location.memberName ?: "Team ${hexKey.take(4)}",
-                        status = when {
-                            location.speed > 2.0 -> "MOVING"
-                            else -> "ACTIVE"
-                        },
+                        name = displayName,
+                        status = status,
                         latitude = location.latitude,
-                        longitude = location.longitude
+                        longitude = location.longitude,
+                        distanceMeters = distanceMeters,
+                        bearingDegrees = bearingDeg,
+                        speedMps = location.speed.toDouble(),
+                        lastSeenMs = location.timestamp,
+                        hasSOS = sosManager.isMemberInSOS(hexKey),
+                        ipAddress = ipAddress,  // Jan 2026: Now wired from discovery
+                        publicKey = location.memberPublicKey
                     )
-                }
+                }.sortedBy { it.status.priority }  // SOS first, then MOVING, ACTIVE, STALE, OFFLINE
+            }.collect { trackedMembers ->
                 _uiState.update { it.copy(trackedTeamMembers = trackedMembers) }
             }
         }
+    }
+
+    // Haversine formula for distance calculation
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val R = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+                kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+        return R * c
+    }
+
+    // Bearing calculation
+    private fun calculateBearing(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val dLon = Math.toRadians(lon2 - lon1)
+        val y = kotlin.math.sin(dLon) * kotlin.math.cos(Math.toRadians(lat2))
+        val x = kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.sin(Math.toRadians(lat2)) -
+                kotlin.math.sin(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) * kotlin.math.cos(dLon)
+        val bearing = Math.toDegrees(kotlin.math.atan2(y, x))
+        return ((bearing + 360) % 360).toFloat()
     }
 
     private fun observeSOS() {
@@ -468,6 +571,7 @@ data class DashboardUiState(
     val username: String = "Operator",
     val isServiceRunning: Boolean = false,
     val discoveredPeers: Int = 0,
+    val nearbyPeers: List<NearbyPeerUiState> = emptyList(),  // Jan 2026: Direct calling
     val meshNodes: Int = 0,
     val signalStrength: SignalStrength = SignalStrength.NONE,
     val networkLatency: Long = 0,
@@ -524,3 +628,26 @@ data class MeshPeerUiState(
     val snr: Int,
     val isActive: Boolean
 )
+
+/**
+ * Nearby Peer UI State - Military Grade Direct Calling
+ * Jan 2026: Enables one-tap calling to discovered peers without QR exchange
+ */
+data class NearbyPeerUiState(
+    val publicKeyHex: String,      // For encryption & identification
+    val publicKey: ByteArray,      // Raw key for calling
+    val name: String,              // Display name (callsign)
+    val ipAddress: String,         // For connection
+    val shortId: String,           // 8-char identifier
+    val networkType: String,       // MESHRIDER, WIFI, etc.
+    val isSavedContact: Boolean,   // Already in contacts?
+    val lastSeenMs: Long           // For freshness indicator
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is NearbyPeerUiState) return false
+        return publicKeyHex == other.publicKeyHex
+    }
+
+    override fun hashCode(): Int = publicKeyHex.hashCode()
+}

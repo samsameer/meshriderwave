@@ -19,10 +19,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -1187,6 +1189,7 @@ fun PremiumTextField(
  * Premium Create Channel Dialog
  *
  * Specialized dialog for creating PTT channels.
+ * Jan 2026: Added scroll support and improved UI/UX
  */
 @Composable
 fun PremiumCreateChannelDialog(
@@ -1196,6 +1199,7 @@ fun PremiumCreateChannelDialog(
     val haptic = LocalHapticFeedback.current
     var name by remember { mutableStateOf("") }
     var frequency by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
 
     var isVisible by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -1211,12 +1215,16 @@ fun PremiumCreateChannelDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false  // Allow dialog to handle keyboard
+        )
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
+                .imePadding()  // Handle keyboard padding
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1226,14 +1234,15 @@ fun PremiumCreateChannelDialog(
         ) {
             Box(
                 modifier = Modifier
-                    .padding(32.dp)
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .widthIn(max = 400.dp)
                     .scale(scale)
                     .clip(RoundedCornerShape(28.dp))
                     .background(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                PremiumColors.SpaceGrayLight.copy(alpha = 0.95f),
-                                PremiumColors.SpaceGray.copy(alpha = 0.98f)
+                                PremiumColors.SpaceGrayLight.copy(alpha = 0.98f),
+                                PremiumColors.SpaceGray.copy(alpha = 0.99f)
                             )
                         )
                     )
@@ -1250,19 +1259,22 @@ fun PremiumCreateChannelDialog(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { }
+                        onClick = { }  // Prevent click-through
                     )
             ) {
+                // Scrollable content
                 Column(
                     modifier = Modifier
-                        .padding(28.dp)
-                        .widthIn(max = 360.dp),
+                        .fillMaxWidth()
+                        .heightIn(max = 600.dp)  // Max height for large screens
+                        .verticalScroll(scrollState)
+                        .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Header icon
+                    // Header icon with glow effect
                     Box(
                         modifier = Modifier
-                            .size(72.dp)
+                            .size(80.dp)
                             .clip(CircleShape)
                             .background(
                                 brush = Brush.radialGradient(
@@ -1277,12 +1289,12 @@ fun PremiumCreateChannelDialog(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(52.dp)
+                                .size(56.dp)
                                 .clip(CircleShape)
                                 .background(PremiumColors.SolarGold.copy(alpha = 0.15f))
                                 .border(
-                                    width = 1.dp,
-                                    color = PremiumColors.SolarGold.copy(alpha = 0.3f),
+                                    width = 1.5.dp,
+                                    color = PremiumColors.SolarGold.copy(alpha = 0.4f),
                                     shape = CircleShape
                                 ),
                             contentAlignment = Alignment.Center
@@ -1290,7 +1302,7 @@ fun PremiumCreateChannelDialog(
                             Icon(
                                 imageVector = Icons.Outlined.RecordVoiceOver,
                                 contentDescription = null,
-                                modifier = Modifier.size(26.dp),
+                                modifier = Modifier.size(28.dp),
                                 tint = PremiumColors.SolarGold
                             )
                         }
@@ -1308,92 +1320,137 @@ fun PremiumCreateChannelDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Push-to-Talk with low-latency Opus audio",
+                        text = "Walkie-talkie style communication with low-latency Opus audio",
                         style = MaterialTheme.typography.bodySmall,
                         color = PremiumColors.TextSecondary,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                    // Name input
+                    // Channel Name input
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Channel Name",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PremiumColors.TextSecondary
-                        )
-                        PremiumTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            placeholder = "e.g., Alpha Squad",
-                            maxLines = 1,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Frequency input
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Channel ID (Optional)",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PremiumColors.TextSecondary
-                        )
-                        PremiumTextField(
-                            value = frequency,
-                            onValueChange = { frequency = it },
-                            placeholder = "e.g., CH-01",
-                            maxLines = 1,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Info badge
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(PremiumColors.ElectricCyan.copy(alpha = 0.1f))
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Speed,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = PremiumColors.ElectricCyan
-                        )
-                        Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Label,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = PremiumColors.TextSecondary
+                            )
                             Text(
-                                text = "Low Latency Audio",
+                                text = "Channel Name",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = PremiumColors.ElectricCyan
+                                color = PremiumColors.TextSecondary
                             )
                             Text(
-                                text = "Opus codec optimized for real-time voice",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = PremiumColors.ElectricCyan.copy(alpha = 0.7f)
+                                text = "*",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = PremiumColors.NeonMagenta
                             )
                         }
+                        PremiumTextField(
+                            value = name,
+                            onValueChange = { if (it.length <= 30) name = it },
+                            placeholder = "e.g., Alpha Squad, Team 1",
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        // Character count
+                        Text(
+                            text = "${name.length}/30",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (name.length >= 25) PremiumColors.ConnectingAmber else PremiumColors.TextTertiary,
+                            modifier = Modifier.align(Alignment.End)
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Buttons
+                    // Channel ID input (optional)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Tag,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = PremiumColors.TextSecondary
+                            )
+                            Text(
+                                text = "Channel ID",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PremiumColors.TextSecondary
+                            )
+                            Text(
+                                text = "(Optional)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = PremiumColors.TextTertiary
+                            )
+                        }
+                        PremiumTextField(
+                            value = frequency,
+                            onValueChange = { if (it.length <= 10) frequency = it },
+                            placeholder = "e.g., CH-01, TAC-1",
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "Auto-generated if empty",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PremiumColors.TextTertiary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Feature cards
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Low latency badge
+                        FeatureBadge(
+                            icon = Icons.Outlined.Speed,
+                            title = "Low Latency",
+                            subtitle = "< 50ms",
+                            color = PremiumColors.ElectricCyan,
+                            modifier = Modifier.weight(1f)
+                        )
+                        // Encrypted badge
+                        FeatureBadge(
+                            icon = Icons.Outlined.Lock,
+                            title = "Encrypted",
+                            subtitle = "E2E",
+                            color = PremiumColors.AuroraGreen,
+                            modifier = Modifier.weight(1f)
+                        )
+                        // Discovery badge
+                        FeatureBadge(
+                            icon = Icons.Outlined.Wifi,
+                            title = "Auto Share",
+                            subtitle = "Nearby",
+                            color = PremiumColors.HoloPurple,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Action buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1408,10 +1465,10 @@ fun PremiumCreateChannelDialog(
                         )
 
                         PremiumButton(
-                            text = "Create Channel",
+                            text = "Create",
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onCreate(name, frequency)
+                                onCreate(name.trim(), frequency.trim())
                             },
                             modifier = Modifier.weight(1f),
                             enabled = name.isNotBlank(),
@@ -1421,5 +1478,47 @@ fun PremiumCreateChannelDialog(
                 }
             }
         }
+    }
+}
+
+/**
+ * Feature badge for dialog (compact info display)
+ */
+@Composable
+private fun FeatureBadge(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(color.copy(alpha = 0.1f))
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = color
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+            maxLines = 1
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = color.copy(alpha = 0.7f),
+            fontSize = 10.sp,
+            maxLines = 1
+        )
     }
 }

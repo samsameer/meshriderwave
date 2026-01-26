@@ -137,8 +137,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideRTPPacketManager(): RTPPacketManager {
-        return RTPPacketManager()
+    fun provideRTPPacketManager(
+        @ApplicationContext context: Context
+    ): RTPPacketManager {
+        return RTPPacketManager(context)
     }
 
     @Provides

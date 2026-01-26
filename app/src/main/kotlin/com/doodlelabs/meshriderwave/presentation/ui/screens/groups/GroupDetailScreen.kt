@@ -144,7 +144,7 @@ fun GroupDetailScreen(
                                     text = (uiState.group?.name ?: "G").take(2).uppercase(),
                                     style = MaterialTheme.typography.headlineMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = PremiumColors.TextPrimary
                                 )
                             }
 
@@ -671,13 +671,13 @@ private fun ShareGroupDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // QR Code
+                // QR Code - White background for scan readability
                 qrBitmap?.let { bitmap ->
                     Box(
                         modifier = Modifier
                             .size(200.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
+                            .background(Color.White) // Required for QR code contrast
                             .padding(8.dp)
                     ) {
                         Image(

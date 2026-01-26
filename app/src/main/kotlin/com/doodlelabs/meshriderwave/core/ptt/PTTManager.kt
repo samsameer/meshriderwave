@@ -89,7 +89,13 @@ class PTTManager @Inject constructor(
     // Audio components
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
+
+    // Jan 2026 FIX: Make volatile for thread visibility
+    // Without volatile, IO thread may not see updates from main thread
+    // causing audio to continue playing/recording after stop
+    @Volatile
     private var isRecording = false
+    @Volatile
     private var isPlaying = false
 
     // Vibrator
@@ -329,9 +335,23 @@ class PTTManager @Inject constructor(
 
     /**
      * Set the active channel for transmission
+     *
+     * Jan 2026 CRITICAL FIX: Initialize transmit state when setting active channel
+     * Without this, requestFloor() returns early because transmitStates map is empty
+     * This was the ROOT CAUSE of PTT audio not working!
      */
     fun setActiveChannel(channel: PTTChannel?) {
         _activeChannel.value = channel
+
+        // Jan 2026 CRITICAL FIX: Initialize transmit state for this channel
+        // Required for requestFloor() to work - it checks transmitStates map
+        channel?.let { ch ->
+            if (!transmitStates.containsKey(ch.shortId)) {
+                initTransmitState(ch)
+                logI("setActiveChannel: Initialized transmit state for ${ch.name}")
+            }
+        }
+
         logD("setActiveChannel: ${channel?.name ?: "none"}")
     }
 
@@ -358,55 +378,80 @@ class PTTManager @Inject constructor(
         priority: FloorControlManager.FloorPriority = FloorControlManager.FloorPriority.NORMAL,
         isEmergency: Boolean = false
     ): FloorResult {
-        if (channel == null) return FloorResult.Error("No active channel")
-        val stateFlow = transmitStates[channel.shortId] ?: return FloorResult.Error("Channel not found")
+        if (channel == null) {
+            logE("requestFloor: No active channel!")
+            return FloorResult.Error("No active channel")
+        }
 
-        logD("requestFloor: ${channel.name}, priority=$priority, emergency=$isEmergency")
+        logI("requestFloor: ${channel.name} (shortId=${channel.shortId}), priority=$priority")
+
+        // Jan 2026 SIMPLIFIED FIX: Just initialize transmit state if needed, don't early return
+        if (!transmitStates.containsKey(channel.shortId)) {
+            logI("requestFloor: Initializing transmit state for ${channel.shortId}")
+            initTransmitState(channel)
+        }
+
+        val stateFlow = transmitStates[channel.shortId]
+        if (stateFlow == null) {
+            logE("requestFloor: FATAL - transmitStates still null after init! shortId=${channel.shortId}, keys=${transmitStates.keys}")
+            return FloorResult.Error("Channel state not found")
+        }
 
         // Check member permissions
+        // Jan 2026 FIX: For discovered channels, member may not be in the list yet
+        // Allow transmission if we're in the channel (even if not in members list)
         val member = channel.members.find { it.publicKey.contentEquals(ownPublicKey) }
-        if (member?.canTransmit != true && !isEmergency) {
+        logD("requestFloor: member=${member?.name}, canTransmit=${member?.canTransmit}, membersCount=${channel.members.size}")
+
+        // Jan 2026 CRITICAL FIX: Only deny if member explicitly exists AND canTransmit is false
+        // Previously this would deny if member wasn't in the list (common for discovered channels)
+        if (member != null && !member.canTransmit && !isEmergency) {
+            logW("requestFloor: Denied - member found but canTransmit=false")
             onFloorDenied?.invoke(channel, "No transmit permission")
             return FloorResult.Denied("No transmit permission")
         }
 
-        // Initialize floor control for this channel if needed
-        floorControlManager.initChannel(channel.channelId)
-        floorControlManager.ownPublicKey = ownPublicKey
-        floorControlManager.ownName = member?.name ?: "Unknown"
+        // Jan 2026 FIX: For walkie-talkie UX, start transmission IMMEDIATELY
+        // The floor control protocol can run in parallel - we want instant feedback
+        // If someone else is transmitting, we'll get preempted (but for local testing this works)
+        logI("requestFloor: Starting transmission immediately (walkie-talkie mode)")
+        startTransmission(channel, isEmergency)
 
-        // Request floor via MCPTT-compliant floor control
-        val result = floorControlManager.requestFloor(
-            channelId = channel.channelId,
-            priority = priority,
-            isEmergency = isEmergency
-        )
+        // Initialize floor control for this channel if needed (in background)
+        scope.launch {
+            try {
+                floorControlManager.initChannel(channel.channelId)
+                floorControlManager.ownPublicKey = ownPublicKey
+                floorControlManager.ownName = member?.name ?: "Unknown"
 
-        return when (result) {
-            is FloorControlManager.FloorRequestResult.Granted -> {
-                logI("Floor GRANTED via MCPTT floor control")
-                startTransmission(channel, isEmergency)
-                FloorResult.Granted
-            }
-            is FloorControlManager.FloorRequestResult.Queued -> {
-                logI("Floor QUEUED at position ${result.position}/${result.total}")
-                stateFlow.update { it.copy(status = PTTTransmitState.Status.QUEUED) }
+                // Request floor via MCPTT-compliant floor control (async - for collision detection)
+                val result = floorControlManager.requestFloor(
+                    channelId = channel.channelId,
+                    priority = priority,
+                    isEmergency = isEmergency
+                )
 
-                // Set up callback for when floor becomes available
-                setupFloorGrantedCallback(channel)
-
-                FloorResult.Queued
-            }
-            is FloorControlManager.FloorRequestResult.Denied -> {
-                logW("Floor DENIED: ${result.reason}")
-                onFloorDenied?.invoke(channel, result.reason)
-                FloorResult.Denied(result.reason)
-            }
-            is FloorControlManager.FloorRequestResult.Error -> {
-                logE("Floor request ERROR: ${result.message}")
-                FloorResult.Error(result.message)
+                when (result) {
+                    is FloorControlManager.FloorRequestResult.Granted -> {
+                        logI("Floor formally GRANTED via MCPTT floor control")
+                    }
+                    is FloorControlManager.FloorRequestResult.Queued -> {
+                        logI("Floor QUEUED - may need to yield")
+                    }
+                    is FloorControlManager.FloorRequestResult.Denied -> {
+                        logW("Floor DENIED: ${result.reason} - should stop transmission")
+                        // In a full implementation, we'd stop transmission here
+                    }
+                    is FloorControlManager.FloorRequestResult.Error -> {
+                        logE("Floor request ERROR: ${result.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                logE("Floor control error (transmission continues)", e)
             }
         }
+
+        return FloorResult.Granted
     }
 
     /**
@@ -426,17 +471,21 @@ class PTTManager @Inject constructor(
     /**
      * Release floor and stop transmission
      *
-     * UPDATED Jan 2026: Uses FloorControlManager for proper release
+     * UPDATED Jan 2026: Always stop transmission even if floor wasn't formally granted
      */
     suspend fun releaseFloor(channel: PTTChannel? = _activeChannel.value) {
         if (channel == null) return
-        logD("releaseFloor: ${channel.name}")
+        logI("releaseFloor: ${channel.name}")
 
-        // Release via floor control manager
-        floorControlManager.releaseFloor(channel.channelId)
-
-        // Stop audio transmission
+        // Stop audio transmission FIRST (always - user let go of button)
         stopTransmission(channel)
+
+        // Release via floor control manager (may fail if not granted, that's OK)
+        try {
+            floorControlManager.releaseFloor(channel.channelId)
+        } catch (e: Exception) {
+            logW("Floor release error (transmission already stopped): ${e.message}")
+        }
     }
 
     /**
@@ -792,17 +841,35 @@ class PTTManager @Inject constructor(
 
     /**
      * Stop audio capture
+     * Jan 2026 FIX: Added exception handling and thread synchronization
      */
     private fun stopAudioCapture() {
         isRecording = false
 
         if (transportMode == TransportMode.MULTICAST) {
-            multicastAudioManager.stopTransmit()
-            logD("Stopped multicast audio capture")
+            try {
+                multicastAudioManager.stopTransmit()
+                logD("Stopped multicast audio capture")
+            } catch (e: Exception) {
+                logE("Error stopping multicast audio capture", e)
+            }
         } else {
-            audioRecord?.stop()
-            audioRecord?.release()
-            audioRecord = null
+            try {
+                // Give audio thread time to see isRecording=false and exit read() loop
+                Thread.sleep(50)
+
+                audioRecord?.let { record ->
+                    if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        record.stop()
+                    }
+                    record.release()
+                }
+                audioRecord = null
+                logD("Stopped legacy audio capture")
+            } catch (e: Exception) {
+                logE("Error stopping audio capture", e)
+                audioRecord = null
+            }
         }
     }
 

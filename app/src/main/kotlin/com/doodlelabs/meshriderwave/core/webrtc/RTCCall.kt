@@ -42,7 +42,8 @@ import java.util.concurrent.Executors
  */
 class RTCCall(
     private val context: Context,
-    private val isOutgoing: Boolean
+    private val isOutgoing: Boolean,
+    private val isVideoCall: Boolean = false
 ) {
     private val executor = Executors.newSingleThreadExecutor()
     // CRASH-FIX Jan 2026: Safe cast to prevent ClassCastException
@@ -100,6 +101,16 @@ class RTCCall(
     // Track if cleanup has been called to prevent double cleanup (FIXED Jan 2026)
     @Volatile
     private var isCleanedUp = false
+
+    // LOCAL VIDEO FIX Jan 2026: Store pending local renderer when track isn't ready yet
+    // This fixes the local preview not showing - renderer is ready before track is created
+    @Volatile
+    private var pendingLocalRenderer: VideoSink? = null
+
+    // HANGUP FIX Jan 2026: Track if remote hangup was received
+    // Prevents reconnection attempts when peer intentionally hung up
+    @Volatile
+    private var remoteHangupReceived = false
 
     // ICE gathering timeout job
     private var iceGatheringTimeoutJob: Job? = null
@@ -164,7 +175,10 @@ class RTCCall(
                     .setVideoDecoderFactory(decoderFactory)
                     .createPeerConnectionFactory()
 
-                logI("initialize() factory created successfully")
+                // LOCAL VIDEO FIX Jan 2026: Signal that video system is ready
+                // This triggers compose to re-render and show local preview
+                updateState { copy(isVideoReady = true) }
+                logI("initialize() factory created successfully, isVideoReady=true")
             } catch (e: Exception) {
                 logE("initialize() failed", e)
                 updateState { copy(status = CallState.Status.ERROR, errorMessage = "WebRTC init failed") }
@@ -178,9 +192,10 @@ class RTCCall(
     fun createPeerConnection(offer: String? = null) {
         logD("createPeerConnection() isOutgoing=$isOutgoing")
 
-        // Reset SDP sent flag for new connection
+        // Reset flags for new connection
         sdpSent = false
         remoteVideoSetUp = false
+        remoteHangupReceived = false  // HANGUP FIX Jan 2026
 
         executor.execute {
             val rtcConfig = PeerConnection.RTCConfiguration(emptyList()).apply {
@@ -248,6 +263,7 @@ class RTCCall(
 
     /**
      * Toggle camera
+     * FIXED Jan 2026: Robust error handling for Samsung device camera exceptions
      */
     fun setCameraEnabled(enabled: Boolean) {
         logD("setCameraEnabled($enabled)")
@@ -256,13 +272,23 @@ class RTCCall(
                 if (enabled && videoCapturer != null) {
                     videoCapturer?.startCapture(VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
                     sendDataChannelMessage("CameraEnabled")
+                    updateState { copy(isCameraEnabled = true) }
                 } else if (!enabled && videoCapturer != null) {
-                    videoCapturer?.stopCapture()
+                    // SAMSUNG FIX Jan 2026: Wrap stopCapture in try-catch
+                    // Samsung devices throw CameraAccessException when stopping during disconnect
+                    try {
+                        videoCapturer?.stopCapture()
+                    } catch (e: Exception) {
+                        // Log but don't crash - camera session may already be closing
+                        logW("Camera stopCapture warning (expected on some devices): ${e.message}")
+                    }
                     sendDataChannelMessage("CameraDisabled")
+                    updateState { copy(isCameraEnabled = false) }
                 }
-                updateState { copy(isCameraEnabled = enabled) }
             } catch (e: Exception) {
                 logE("setCameraEnabled() failed", e)
+                // Still update state to reflect user intent
+                updateState { copy(isCameraEnabled = enabled) }
             }
         }
     }
@@ -314,13 +340,42 @@ class RTCCall(
     fun getLocalVideoTrack(): VideoTrack? = localVideoTrack
 
     /**
+     * Set local video renderer - handles timing issues
+     * LOCAL VIDEO FIX Jan 2026: If track isn't ready yet, store renderer for later attachment
+     */
+    fun setLocalVideoRenderer(renderer: VideoSink) {
+        executor.execute {
+            localVideoTrack?.let { track ->
+                // Track exists - attach immediately
+                try {
+                    track.addSink(renderer)
+                    logI("Local video sink added successfully")
+                } catch (e: Exception) {
+                    logE("Failed to add local video sink", e)
+                }
+            } ?: run {
+                // Track not ready - store for later
+                pendingLocalRenderer = renderer
+                logD("Local video track not ready - renderer stored for later attachment")
+            }
+        }
+    }
+
+    /**
      * Hangup and cleanup
+     * HANGUP FIX Jan 2026: Give time for Hangup message to be sent before cleanup
      */
     fun hangup() {
         logI("hangup()")
         sendDataChannelMessage("Hangup")
         updateState { copy(status = CallState.Status.ENDED) }
-        cleanup()
+
+        // HANGUP FIX Jan 2026: Delay cleanup to allow Hangup message to be sent
+        // Without this delay, cleanup() closes data channel before message is sent
+        callScope.launch {
+            delay(300)  // Give message time to be sent
+            cleanup()
+        }
     }
 
     /**
@@ -382,15 +437,19 @@ class RTCCall(
                 remoteVideoSink = null
 
                 // Stop and dispose video capturer
+                // SAMSUNG FIX Jan 2026: Handle CameraAccessException during cleanup
                 try {
                     videoCapturer?.stopCapture()
+                } catch (e: android.hardware.camera2.CameraAccessException) {
+                    // Expected on Samsung devices - camera session already closing
+                    logW("Camera stopCapture CameraAccessException (expected on Samsung): ${e.message}")
                 } catch (e: Exception) {
-                    logE("Error stopping video capturer", e)
+                    logW("Error stopping video capturer: ${e.message}")
                 }
                 try {
                     videoCapturer?.dispose()
                 } catch (e: Exception) {
-                    logE("Error disposing video capturer", e)
+                    logW("Error disposing video capturer: ${e.message}")
                 }
                 videoCapturer = null
 
@@ -509,14 +568,29 @@ class RTCCall(
             localVideoTrack?.setEnabled(true)
             peerConnection?.addTrack(localVideoTrack, listOf(STREAM_ID))
 
-            // Start video capture immediately (like Meshenger)
-            // Camera can be disabled later with setCameraEnabled(false)
-            try {
-                videoCapturer?.startCapture(VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
-                updateState { copy(isCameraEnabled = true) }
-                logD("Video track added and camera started successfully")
-            } catch (e: Exception) {
-                logE("Failed to start camera", e)
+            // LOCAL VIDEO FIX Jan 2026: Attach pending renderer if UI was ready before track
+            pendingLocalRenderer?.let { renderer ->
+                try {
+                    localVideoTrack?.addSink(renderer)
+                    logI("Attached pending local renderer to video track")
+                } catch (e: Exception) {
+                    logE("Failed to attach pending local renderer", e)
+                }
+                pendingLocalRenderer = null
+            }
+
+            // FIXED Jan 2026: Only start camera for video calls
+            // This is called after video track is created, so it's safe to start capture
+            if (isVideoCall) {
+                try {
+                    videoCapturer?.startCapture(VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
+                    updateState { copy(isCameraEnabled = true) }
+                    logI("Video call: camera started after track creation")
+                } catch (e: Exception) {
+                    logE("Failed to start camera for video call", e)
+                }
+            } else {
+                logD("Voice call: camera NOT started")
             }
         } else {
             logW("No camera available - audio only call")
@@ -616,9 +690,13 @@ class RTCCall(
                     java.nio.ByteBuffer.wrap(json.toByteArray()),
                     false
                 )
-                channel.send(buffer)
-                logD("Sent data channel message: $message")
+                val sent = channel.send(buffer)
+                logD("Sent data channel message: $message (success=$sent)")
+            } else {
+                logW("Cannot send data channel message '$message' - channel state: ${channel.state()}")
             }
+        } ?: run {
+            logW("Cannot send data channel message '$message' - channel is null")
         }
     }
 
@@ -824,37 +902,48 @@ class RTCCall(
         override fun onMessage(buffer: DataChannel.Buffer) {
             val data = ByteArray(buffer.data.remaining())
             buffer.data.get(data)
-            val message = String(data)
+            val rawMessage = String(data)
+
+            // Parse JSON message format: {"type":"MessageType"}
+            // FIX Jan 2026: Messages are sent as JSON but handler was checking raw string
+            val messageType = try {
+                org.json.JSONObject(rawMessage).optString("type", rawMessage)
+            } catch (e: Exception) {
+                // Fallback to raw message if not valid JSON
+                rawMessage
+            }
 
             // Don't log heartbeats to reduce noise
-            if (!message.startsWith("Heartbeat:")) {
-                logD("Data channel message: $message")
+            if (!messageType.startsWith("Heartbeat:")) {
+                logD("Data channel message: $messageType (raw: $rawMessage)")
             }
 
             when {
-                message == "Hangup" -> {
+                messageType == "Hangup" -> {
                     logI("Remote hangup received")
+                    // HANGUP FIX Jan 2026: Set flag FIRST to prevent reconnection race
+                    remoteHangupReceived = true
                     stopReconnection()
                     stopHeartbeat()
                     updateState { copy(status = CallState.Status.ENDED) }
                 }
-                message.startsWith("Heartbeat:ping:") -> {
+                messageType.startsWith("Heartbeat:ping:") -> {
                     // Respond to heartbeat ping with pong
-                    val timestamp = message.substringAfter("Heartbeat:ping:")
+                    val timestamp = messageType.substringAfter("Heartbeat:ping:")
                     sendDataChannelMessage("Heartbeat:pong:$timestamp")
                     handleHeartbeatReceived()
                 }
-                message.startsWith("Heartbeat:pong:") -> {
+                messageType.startsWith("Heartbeat:pong:") -> {
                     // Received pong response
                     handleHeartbeatReceived()
                 }
-                message == "CameraEnabled" -> {
+                messageType == "CameraEnabled" -> {
                     logD("Remote camera enabled")
                 }
-                message == "CameraDisabled" -> {
+                messageType == "CameraDisabled" -> {
                     logD("Remote camera disabled")
                 }
-                message == "LowBandwidthMode" -> {
+                messageType == "LowBandwidthMode" -> {
                     logI("Remote requested low bandwidth mode")
                 }
             }
@@ -941,6 +1030,7 @@ class RTCCall(
     /**
      * Start enterprise-level reconnection with 30-second timeout
      * Attempts ICE restart every 3 seconds until timeout or success
+     * HANGUP FIX Jan 2026: Wait 500ms before reconnecting to allow Hangup message to arrive
      */
     private fun startEnterpriseReconnection(reason: String) {
         // Don't start if already reconnecting
@@ -955,25 +1045,57 @@ class RTCCall(
             return
         }
 
-        disconnectTime = System.currentTimeMillis()
-
-        updateState {
-            copy(
-                status = CallState.Status.RECONNECTING,
-                lastDisconnectTime = disconnectTime,
-                reconnectAttempt = 0,
-                errorMessage = reason
-            )
+        // HANGUP FIX Jan 2026: Check if remote already hung up
+        if (remoteHangupReceived) {
+            logI("Remote hangup received, not reconnecting")
+            updateState { copy(status = CallState.Status.ENDED) }
+            return
         }
 
+        disconnectTime = System.currentTimeMillis()
+
+        // Don't show "Reconnecting" immediately - wait to see if it's a hangup
+        logD("Disconnect detected, waiting 500ms before reconnecting...")
+
         reconnectJob = callScope.launch {
+            // HANGUP FIX Jan 2026: Wait for potential Hangup message
+            delay(500)
+
+            // Check again after delay
+            if (remoteHangupReceived) {
+                logI("Remote hangup received during delay, not reconnecting")
+                updateState { copy(status = CallState.Status.ENDED) }
+                return@launch
+            }
+
+            if (isCleanedUp) {
+                logD("Cleaned up during delay, skipping reconnection")
+                return@launch
+            }
+
+            // Now show reconnecting status
+            updateState {
+                copy(
+                    status = CallState.Status.RECONNECTING,
+                    lastDisconnectTime = disconnectTime,
+                    reconnectAttempt = 0,
+                    errorMessage = reason
+                )
+            }
             logI("Starting enterprise reconnection (timeout: ${RECONNECT_TIMEOUT_SECONDS}s)")
 
             val startTime = System.currentTimeMillis()
             val timeoutMs = RECONNECT_TIMEOUT_SECONDS * 1000L
 
-            while (isActive && !isCleanedUp) {
+            while (isActive && !isCleanedUp && !remoteHangupReceived) {
                 val elapsed = System.currentTimeMillis() - startTime
+
+                // HANGUP FIX Jan 2026: Check for hangup every iteration
+                if (remoteHangupReceived) {
+                    logI("Remote hangup received during reconnection, ending call")
+                    updateState { copy(status = CallState.Status.ENDED) }
+                    break
+                }
 
                 // Check timeout
                 if (elapsed >= timeoutMs) {

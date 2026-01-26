@@ -1,6 +1,8 @@
 /*
  * Mesh Rider Wave - QR Show Screen
  * Copyright (C) 2024-2026 Jabbir Basha P. All Rights Reserved.
+ *
+ * Premium QR code display with Starlink-inspired dark theme
  */
 
 package com.doodlelabs.meshriderwave.presentation.ui.screens.qr
@@ -8,6 +10,7 @@ package com.doodlelabs.meshriderwave.presentation.ui.screens.qr
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,12 +20,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.doodlelabs.meshriderwave.presentation.ui.components.DeepSpaceBackground
+import com.doodlelabs.meshriderwave.presentation.ui.theme.PremiumColors
 import com.doodlelabs.meshriderwave.presentation.viewmodel.MainViewModel
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
@@ -45,57 +51,79 @@ fun QRShowScreen(
         generateQRCode(qrData, 512)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("My QR Code") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { /* Share */ }) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Share this QR code",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Others can scan this to add you as a contact",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // QR Code
-            Card(
-                modifier = Modifier.size(280.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+    DeepSpaceBackground {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "My QR Code",
+                            color = PremiumColors.TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = PremiumColors.TextPrimary
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { /* Share */ }) {
+                            Icon(
+                                Icons.Filled.Share,
+                                contentDescription = "Share",
+                                tint = PremiumColors.ElectricCyan
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    )
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
+                Text(
+                    text = "Share this QR code",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PremiumColors.TextPrimary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Others can scan this to add you as a contact",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PremiumColors.TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // QR Code Card - Premium styled with proper contrast
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .size(280.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.White) // White background for QR code readability
+                        .border(
+                            width = 2.dp,
+                            color = PremiumColors.ElectricCyan,
+                            shape = RoundedCornerShape(24.dp)
+                        )
                         .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -107,33 +135,53 @@ fun QRShowScreen(
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
-            // User info
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = uiState.username,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (uiState.localAddresses.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = uiState.localAddresses.first(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                // User info card - Premium styled
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(PremiumColors.SpaceGray)
+                        .border(
+                            width = 1.dp,
+                            color = PremiumColors.GlassBorder,
+                            shape = RoundedCornerShape(16.dp)
                         )
+                        .padding(20.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = uiState.username,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = PremiumColors.TextPrimary
+                        )
+                        if (uiState.localAddresses.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = uiState.localAddresses.first(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = PremiumColors.TextSecondary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        // Encryption badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PremiumColors.OnlineGlow.copy(alpha = 0.15f))
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "E2E Encrypted",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PremiumColors.OnlineGlow
+                            )
+                        }
                     }
                 }
             }

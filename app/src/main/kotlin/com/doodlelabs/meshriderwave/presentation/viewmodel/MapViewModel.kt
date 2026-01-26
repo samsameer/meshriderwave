@@ -82,7 +82,7 @@ class MapViewModel @Inject constructor(
 
                     TeamMemberLocationUiModel(
                         id = hexKey,
-                        name = "Team ${hexKey.take(4).uppercase()}",
+                        name = location.memberName ?: "Team ${hexKey.take(4).uppercase()}",
                         status = when {
                             location.speed > 2.0 -> "MOVING"
                             else -> "ACTIVE"
@@ -155,6 +155,25 @@ class MapViewModel @Inject constructor(
         Log.d(TAG, "Center on my location")
     }
 
+    /**
+     * Select a team member to show details
+     * Jan 2026: Shows bottom sheet with member info and call actions
+     */
+    fun selectMember(memberId: String) {
+        val member = _uiState.value.trackedMembers.find { it.id == memberId }
+        if (member != null) {
+            Log.d(TAG, "Selected member: ${member.name}")
+            _uiState.update { it.copy(selectedMember = member) }
+        }
+    }
+
+    /**
+     * Clear member selection (dismiss detail sheet)
+     */
+    fun clearSelection() {
+        _uiState.update { it.copy(selectedMember = null) }
+    }
+
     fun activateSOS() {
         viewModelScope.launch {
             try {
@@ -208,5 +227,7 @@ data class MapUiState(
     val trackedMembers: List<TeamMemberLocationUiModel> = emptyList(),
     val geofences: List<GeofenceUiModel> = emptyList(),
     val sosAlerts: List<SOSAlertUiModel> = emptyList(),
-    val isSharingLocation: Boolean = false
+    val isSharingLocation: Boolean = false,
+    // Jan 2026: Selected member for detail sheet
+    val selectedMember: TeamMemberLocationUiModel? = null
 )

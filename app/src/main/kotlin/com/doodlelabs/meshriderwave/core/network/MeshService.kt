@@ -14,15 +14,18 @@
 
 package com.doodlelabs.meshriderwave.core.network
 
+import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.doodlelabs.meshriderwave.BuildConfig
 import com.doodlelabs.meshriderwave.MeshRiderApp
 import com.doodlelabs.meshriderwave.R
@@ -108,20 +111,39 @@ class MeshService : Service() {
     private fun startForegroundWithNotification() {
         val notification = createNotification("Listening for calls...")
 
+        // CRITICAL FIX Jan 2026: Android 14+ requires RECORD_AUDIO permission BEFORE
+        // starting foreground service with MICROPHONE type. Check permission first.
+        val hasMicPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasCameraPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
+            // Build service type based on granted permissions
+            var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            if (hasMicPermission) {
+                serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            if (hasCameraPermission) {
+                serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            }
+
+            logD("startForeground: mic=$hasMicPermission, camera=$hasCameraPermission, type=$serviceType")
+            startForeground(NOTIFICATION_ID, notification, serviceType)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            if (hasMicPermission) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            } else {
+                // Fallback without microphone type
+                startForeground(NOTIFICATION_ID, notification)
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -371,6 +393,11 @@ class MeshService : Service() {
 
         meshNetworkManager.stop()
         logI("MeshNetworkManager stopped")
+
+        // Jan 2026 CRITICAL FIX: Clean up PTTManager resources
+        // Without this, audio threads/sockets leak after service stop
+        pttManager.cleanup()
+        logI("PTTManager stopped")
     }
 
     private fun handleIncomingCall(call: MeshNetworkManager.IncomingCall) {

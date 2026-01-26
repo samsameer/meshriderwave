@@ -165,7 +165,7 @@ fun QRScanScreen(
                         modifier = Modifier
                             .size(280.dp)
                             .clip(RoundedCornerShape(24.dp))
-                            .background(Color.White.copy(alpha = 0.1f))
+                            .background(PremiumColors.GlassWhite)
                     )
                 }
 
@@ -174,13 +174,13 @@ fun QRScanScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.6f))
+                        .background(PremiumColors.DeepSpace.copy(alpha = 0.8f))
                         .padding(24.dp)
                 ) {
                     Text(
                         text = "Point the camera at a Contact or Group QR code",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White,
+                        color = PremiumColors.TextPrimary,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )

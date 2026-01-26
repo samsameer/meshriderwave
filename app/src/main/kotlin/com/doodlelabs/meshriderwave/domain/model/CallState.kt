@@ -40,7 +40,11 @@ data class CallState(
 
     // Adaptive Quality
     val isLowBandwidthMode: Boolean = false,
-    val videoDisabledDueToNetwork: Boolean = false
+    val videoDisabledDueToNetwork: Boolean = false,
+
+    // LOCAL VIDEO FIX Jan 2026: Track when video system is initialized
+    // This triggers compose rerender when EGL context and tracks are ready
+    val isVideoReady: Boolean = false
 ) {
     companion object {
         const val MAX_RECONNECT_ATTEMPTS = 5

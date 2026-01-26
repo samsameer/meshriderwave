@@ -284,8 +284,10 @@ class LocationSharingManager @Inject constructor(
 
                 // Update current location
                 val current = _teamLocations.value.toMutableMap()
-                current[hexKey] = location.copy(memberName = name)
+                val updatedLocation = location.copy(memberName = name)
+                current[hexKey] = updatedLocation
                 _teamLocations.value = current
+                Log.d(TAG, "Stored team location for $hexKey: memberName='${updatedLocation.memberName}'")
 
                 // Add to track history
                 val history = trackHistory.getOrPut(hexKey) { mutableListOf() }

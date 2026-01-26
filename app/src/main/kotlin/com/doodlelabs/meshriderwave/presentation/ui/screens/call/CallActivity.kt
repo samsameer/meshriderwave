@@ -84,6 +84,11 @@ class CallActivity : ComponentActivity() {
     private var signalingSocket: Socket? = null
     private var remoteSenderKey: ByteArray? = null
 
+    // Direct peer calling (Jan 2026) - for discovered peers without saved contact
+    private var directPeerPublicKey: ByteArray? = null
+    private var directPeerIpAddress: String? = null
+    private var directPeerName: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -109,6 +114,18 @@ class CallActivity : ComponentActivity() {
             remoteSenderKey = android.util.Base64.decode(it, android.util.Base64.NO_WRAP)
         }
 
+        // Direct peer calling (Jan 2026) - for discovered peers without saved contact
+        val peerPublicKeyBase64 = intent.getStringExtra(EXTRA_PEER_PUBLIC_KEY)
+        val peerIpAddress = intent.getStringExtra(EXTRA_PEER_IP_ADDRESS)
+        val peerName = intent.getStringExtra(EXTRA_PEER_NAME)
+
+        peerPublicKeyBase64?.let {
+            directPeerPublicKey = android.util.Base64.decode(it, android.util.Base64.NO_WRAP)
+            directPeerIpAddress = peerIpAddress
+            directPeerName = peerName
+            logI("Direct peer call: name=$peerName ip=$peerIpAddress")
+        }
+
         // For incoming calls, retrieve signaling socket from MeshService
         if (!isOutgoing) {
             signalingSocket = MeshService.getPendingCallSocket()
@@ -118,14 +135,9 @@ class CallActivity : ComponentActivity() {
         logI("CallActivity onCreate: isOutgoing=$isOutgoing isVideoCall=$isVideoCall contactId=$contactId")
 
         // Initialize WebRTC
-        rtcCall = RTCCall(this, isOutgoing).apply {
+        // FIXED Jan 2026: Pass isVideoCall to RTCCall so it can enable camera at the right time
+        rtcCall = RTCCall(this, isOutgoing, isVideoCall).apply {
             initialize()
-
-            // FIXED Jan 2026: Auto-enable camera for video calls
-            if (isVideoCall) {
-                setCameraEnabled(true)
-                logI("Video call: camera auto-enabled")
-            }
 
             // Set up SDP callback for signaling
             onLocalDescription = { sdp ->
@@ -178,18 +190,35 @@ class CallActivity : ComponentActivity() {
                     mutableStateOf(CallState())
                 }
 
+                // TIMER FIX Jan 2026: Force recomposition every second for timer display
+                var timerTick by remember { mutableStateOf(0L) }
+                LaunchedEffect(callState.isConnected) {
+                    if (callState.isConnected) {
+                        while (true) {
+                            kotlinx.coroutines.delay(1000)
+                            timerTick = System.currentTimeMillis()
+                        }
+                    }
+                }
+                // Use timerTick to trigger recomposition (read to force dependency)
+                @Suppress("UNUSED_VARIABLE")
+                val tick = timerTick
+
                 // Track video enabled state
-                val showVideo = callState.isCameraEnabled || callState.isConnected
+                // FIXED Jan 2026: Show video if camera is enabled OR if isVideoCall (to show preview early)
+                val showVideo = isVideoCall || callState.isCameraEnabled
 
                 PremiumCallScreen(
                     callState = callState,
                     isOutgoing = isOutgoing,
-                    contactName = contactId ?: remoteAddress ?: "Unknown",
+                    contactName = directPeerName ?: contactId ?: remoteAddress ?: "Unknown",
                     showVideo = showVideo,
                     eglContext = rtcCall?.eglBaseContext,
                     onLocalRendererReady = { renderer ->
                         localRenderer = renderer
-                        rtcCall?.getLocalVideoTrack()?.addSink(renderer)
+                        // LOCAL VIDEO FIX Jan 2026: Use new method that handles timing
+                        // If track isn't ready yet, renderer will be stored and attached later
+                        rtcCall?.setLocalVideoRenderer(renderer)
                     },
                     onRemoteRendererReady = { renderer ->
                         remoteRenderer = renderer
@@ -246,29 +275,46 @@ class CallActivity : ComponentActivity() {
         // Start call if outgoing
         if (isOutgoing) {
             rtcCall?.createPeerConnection()
+            // Camera is now enabled inside RTCCall.addMediaTracks() for video calls
         }
     }
 
     /**
      * Send SDP offer to contact via mesh network
      * FIXED Jan 2026: Proper error handling to prevent crashes
+     * UPDATED Jan 2026: Support direct peer calling without saved contact
      */
     private suspend fun sendOfferToContact(contactId: String?, offerSdp: String) {
-        if (contactId == null) {
-            logE("sendOfferToContact: contactId is null")
+        // Determine contact - either from saved contacts or create temporary for direct peer
+        val contact: com.doodlelabs.meshriderwave.domain.model.Contact
+
+        if (directPeerPublicKey != null && directPeerIpAddress != null) {
+            // Direct peer calling - create temporary Contact object
+            logI("sendOfferToContact: DIRECT PEER CALL to ${directPeerName}")
+            contact = com.doodlelabs.meshriderwave.domain.model.Contact(
+                publicKey = directPeerPublicKey!!,
+                name = directPeerName ?: "Unknown Peer",
+                addresses = listOf(directPeerIpAddress!!),
+                lastWorkingAddress = directPeerIpAddress,
+                createdAt = System.currentTimeMillis(),
+                lastSeenAt = System.currentTimeMillis()
+            )
+        } else if (contactId != null) {
+            // Traditional contact-based calling
+            val savedContact = contactRepository.getContactByDeviceId(contactId)
+            if (savedContact == null) {
+                logE("sendOfferToContact: contact not found for $contactId")
+                handleCallError("Contact not found")
+                return
+            }
+            contact = savedContact
+        } else {
+            logE("sendOfferToContact: no contact ID or direct peer info")
             handleCallError("Invalid contact")
             return
         }
 
-        // Look up contact
-        val contact = contactRepository.getContactByDeviceId(contactId)
-        if (contact == null) {
-            logE("sendOfferToContact: contact not found for $contactId")
-            handleCallError("Contact not found")
-            return
-        }
-
-        // FIXED Jan 2026: Debug logging for connection issues
+        // Debug logging for connection issues
         logI("sendOfferToContact: initiating call to ${contact.name}")
         logI("sendOfferToContact: contact addresses = ${contact.addresses}")
         logI("sendOfferToContact: lastWorkingAddress = ${contact.lastWorkingAddress}")
@@ -387,6 +433,10 @@ class CallActivity : ComponentActivity() {
         const val EXTRA_REMOTE_ADDRESS = "remote_address"
         const val EXTRA_OFFER = "offer"
         const val EXTRA_SENDER_KEY = "sender_key"
+        // Direct peer calling (Jan 2026) - for discovered peers without saved contact
+        const val EXTRA_PEER_PUBLIC_KEY = "peer_public_key"
+        const val EXTRA_PEER_IP_ADDRESS = "peer_ip_address"
+        const val EXTRA_PEER_NAME = "peer_name"
     }
 }
 
@@ -437,11 +487,13 @@ fun PremiumCallScreen(
         }
 
         // Local video PiP (draggable)
-        if (showVideo && eglContext != null && callState.isCameraEnabled) {
+        // VIDEO PREVIEW FIX Jan 2026: Show preview when video is ready (don't wait for camera enable)
+        // showVideo is already true for video calls, just need isVideoReady and eglContext
+        if (showVideo && callState.isVideoReady && eglContext != null) {
             DraggableLocalVideo(
                 eglContext = eglContext,
                 onRendererReady = onLocalRendererReady,
-                modifier = Modifier.align(Alignment.TopEnd)
+                modifier = Modifier  // No alignment - DraggableLocalVideo calculates its own position
             )
         }
 
@@ -592,12 +644,7 @@ private fun CallContent(
             .systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(60.dp))
-
-        // Encryption badge
-        EncryptionBadge(isEncrypted = true)
-
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(80.dp))
 
         // Avatar with animation (hide when video is showing)
         AnimatedVisibility(
