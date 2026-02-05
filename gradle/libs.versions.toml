@@ -24,8 +24,9 @@ webrtc = "119.0.0"
 okhttp = "4.12.0"
 ktor = "3.0.2"
 
-# Audio Codec - Uses Android MediaCodec for Opus (API 29+)
-# Native Opus for older devices can be added via NDK build
+# Audio & Codec
+# Oboe for low-latency audio (developer.android.com/games/sdk/oboe)
+oboe = "1.5.0"
 
 # Crypto
 lazysodium = "5.1.0"
@@ -95,6 +96,9 @@ hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-com
 
 # WebRTC
 webrtc = { group = "im.conversations.webrtc", name = "webrtc-android", version.ref = "webrtc" }
+
+# Audio - Oboe for low-latency PTT
+oboe = { group = "com.google.oboe", name = "oboe", version.ref = "oboe" }
 
 # Crypto
 lazysodium = { group = "com.goterl", name = "lazysodium-android", version.ref = "lazysodium" }

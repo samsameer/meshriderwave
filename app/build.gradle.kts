@@ -35,6 +35,13 @@ android {
         buildConfigField("int", "SIGNALING_PORT", "10001")
         buildConfigField("int", "MESH_BROADCAST_PORT", "11111")
         buildConfigField("String", "MESH_SUBNET", "\"10.223.\"")
+
+        // NDK build arguments for Oboe - TEMPORARILY DISABLED
+        // externalNativeBuild {
+        //     cmake {
+        //         arguments += listOf("-DANDROID_STL=c++_shared")
+        //     }
+        // }
     }
 
     buildTypes {
@@ -55,6 +62,14 @@ android {
         }
     }
 
+    // Prefab support for native libraries (Oboe)
+    // Following developer.android.com/studio/build/native-dependencies
+    buildFeatures {
+        prefab = true
+        compose = true
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -68,11 +83,6 @@ android {
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
             "-opt-in=androidx.compose.animation.ExperimentalAnimationApi"
         )
-    }
-
-    buildFeatures {
-        compose = true
-        buildConfig = true
     }
 
     packaging {
@@ -94,6 +104,19 @@ android {
             kotlin.srcDirs("src/androidTest/kotlin")
         }
     }
+
+    // Native NDK build for Oboe low-latency audio
+    // Following developer.android.com/games/sdk/oboe guidelines
+    // ENABLED - Feb 2026 for production PTT with <20ms latency
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // NDK configuration (Feb 2026 - latest stable)
+    ndkVersion = "27.0.11902837"
 }
 
 dependencies {
@@ -128,6 +151,9 @@ dependencies {
 
     // WebRTC
     implementation(libs.webrtc)
+
+    // Oboe - Low-latency audio for PTT (developer.android.com/games/sdk/oboe)
+    implementation(libs.oboe)
 
     // Audio Codec - Opus for low-bandwidth PTT (6-24 kbps vs 256 kbps PCM)
     // Uses Android MediaCodec for Opus encoding/decoding (API 29+)
