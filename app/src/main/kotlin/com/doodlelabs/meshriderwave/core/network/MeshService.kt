@@ -513,6 +513,9 @@ class MeshService : Service() {
     companion object {
         const val ACTION_START = "com.doodlelabs.meshriderwave.START"
         const val ACTION_STOP = "com.doodlelabs.meshriderwave.STOP"
+        // Feb 2026 FIX: PTT actions for hardware button support (XCover)
+        const val ACTION_PTT_DOWN = "com.doodlelabs.meshriderwave.PTT_DOWN"
+        const val ACTION_PTT_UP = "com.doodlelabs.meshriderwave.PTT_UP"
         const val NOTIFICATION_ID = 1001
 
         // Thread-safe socket holder using Object lock

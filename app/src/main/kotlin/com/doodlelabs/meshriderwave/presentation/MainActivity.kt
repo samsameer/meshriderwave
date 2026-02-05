@@ -6,8 +6,10 @@
 package com.doodlelabs.meshriderwave.presentation
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.content.ContextCompat
 import android.os.Bundle
@@ -47,12 +49,46 @@ val LocalWindowWidthSizeClass = compositionLocalOf { WindowWidthSizeClass.Compac
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    // Feb 2026 FIX: Nearby WiFi permission for Android 13+ (Samsung S24+)
+    // Without this, mDNS peer discovery fails silently
+    private val nearbyWifiPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            // Show dialog explaining why this is needed
+            AlertDialog.Builder(this)
+                .setTitle("Local Network Access Required")
+                .setMessage("PTT needs to discover other devices on WiFi. Please allow local network access for peer discovery to work.")
+                .setPositiveButton("Settings") { _, _ ->
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:com.doodlelabs.meshriderwave")
+                    }
+                    startActivity(intent)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else {
+            logD("NEARBY_WIFI_DEVICES permission granted")
+            startMeshService()
+        }
+    }
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         logD("Permissions granted: $allGranted")
         if (allGranted) {
+            // Feb 2026 FIX: Request nearby WiFi permission after basic permissions
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val hasNearbyWifi = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.NEARBY_WIFI_DEVICES
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!hasNearbyWifi) {
+                    nearbyWifiPermissionLauncher.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+                    return@registerForActivityResult
+                }
+            }
             startMeshService()
         }
     }
@@ -133,10 +169,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hasRequiredPermissions(): Boolean {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+        val hasBasic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED
+
+        // Feb 2026 FIX: Also check NEARBY_WIFI_DEVICES on Android 13+
+        val hasNearbyWifi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) ==
+                    PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+
+        return hasBasic && hasNearbyWifi
     }
 
     private fun startMeshService() {

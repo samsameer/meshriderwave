@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <!-- Required for WiFi multicast reception (PTT audio over multicast UDP) -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Feb 2026 FIX: Required for mDNS peer discovery on Android 13+ (Samsung S24+) -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
     <!-- Audio/Video Permissions -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -116,6 +118,32 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- PTT Service - Foreground service for PTT audio (Android 14+) -->
+        <service
+            android:name=".ptt.PttService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Samsung XCover PTT Button Receiver -->
+        <receiver
+            android:name=".ptt.XCoverPttButtonReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <!-- Samsung XCover button intent -->
+            <intent-filter>
+                <action android:name="com.samsung.android.intent.XCOVER_KEY" />
+            </intent-filter>
+            <!-- Samsung Active button intent -->
+            <intent-filter>
+                <action android:name="com.samsung.android.intent.ACTION_KEY" />
+            </intent-filter>
+            <!-- Generic PTT button intent -->
+            <intent-filter>
+                <action android:name="android.intent.action.PTT_BUTTON" />
             </intent-filter>
         </receiver>
 
