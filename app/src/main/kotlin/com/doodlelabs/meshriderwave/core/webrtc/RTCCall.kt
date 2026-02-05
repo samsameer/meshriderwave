@@ -94,9 +94,13 @@ class RTCCall(
     @Volatile
     private var remoteVideoSetUp = false
 
-    // Track if SDP has been sent to prevent duplicates
+    // Track if initial SDP has been sent to prevent duplicates
     @Volatile
     private var sdpSent = false
+
+    // Track if initial connection is established (for renegotiation)
+    @Volatile
+    private var initialConnectionEstablished = false
 
     // Track if cleanup has been called to prevent double cleanup (FIXED Jan 2026)
     @Volatile
@@ -175,10 +179,9 @@ class RTCCall(
                     .setVideoDecoderFactory(decoderFactory)
                     .createPeerConnectionFactory()
 
-                // LOCAL VIDEO FIX Jan 2026: Signal that video system is ready
-                // This triggers compose to re-render and show local preview
-                updateState { copy(isVideoReady = true) }
-                logI("initialize() factory created successfully, isVideoReady=true")
+                // Signal factory ready - video readiness depends on actual camera start
+                updateState { copy(isVideoReady = isVideoCall) }
+                logI("initialize() factory created successfully, isVideoReady=$isVideoCall")
             } catch (e: Exception) {
                 logE("initialize() failed", e)
                 updateState { copy(status = CallState.Status.ERROR, errorMessage = "WebRTC init failed") }
@@ -269,11 +272,35 @@ class RTCCall(
         logD("setCameraEnabled($enabled)")
         executor.execute {
             try {
-                if (enabled && videoCapturer != null) {
+                if (enabled) {
+                    // Create video track on-the-fly if it doesn't exist (audio call upgrading to video)
+                    if (videoCapturer == null) {
+                        val capturer = createVideoCapturer()
+                        val eglContext = eglBase?.eglBaseContext
+                        if (capturer != null && eglContext != null) {
+                            videoCapturer = capturer
+                            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
+                            videoSource = factory?.createVideoSource(capturer.isScreencast)
+                            capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
+                            localVideoTrack = factory?.createVideoTrack(VIDEO_TRACK_ID, videoSource)
+                            localVideoSink = ProxyVideoSink()
+                            localVideoTrack?.addSink(localVideoSink)
+                            localVideoTrack?.setEnabled(true)
+                            peerConnection?.addTrack(localVideoTrack, listOf(STREAM_ID))
+                            pendingLocalRenderer?.let { renderer ->
+                                localVideoTrack?.addSink(renderer)
+                                pendingLocalRenderer = null
+                            }
+                            logI("Created video track on-the-fly for camera enable")
+                        } else {
+                            logE("Cannot enable camera - no capturer or EGL context")
+                            return@execute
+                        }
+                    }
                     videoCapturer?.startCapture(VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
                     sendDataChannelMessage("CameraEnabled")
-                    updateState { copy(isCameraEnabled = true) }
-                } else if (!enabled && videoCapturer != null) {
+                    updateState { copy(isCameraEnabled = true, isVideoReady = true) }
+                } else if (videoCapturer != null) {
                     // SAMSUNG FIX Jan 2026: Wrap stopCapture in try-catch
                     // Samsung devices throw CameraAccessException when stopping during disconnect
                     try {
@@ -462,7 +489,7 @@ class RTCCall(
                 }
                 dataChannel = null
 
-                // Close peer connection
+                // Close peer connection (releases media streams and ICE)
                 try {
                     peerConnection?.close()
                 } catch (e: Exception) {
@@ -493,12 +520,12 @@ class RTCCall(
                 }
                 surfaceTextureHelper = null
 
-                // Dispose factory
-                try {
-                    factory?.dispose()
-                } catch (e: Exception) {
-                    logE("Error disposing factory", e)
-                }
+                // CRITICAL Jan 2026: Do NOT dispose PeerConnectionFactory.
+                // WebRTC's native audio device module (ADM) has global state.
+                // Calling factory.dispose() corrupts the ADM, causing SIGSEGV
+                // (null pointer in nativeGetPlayoutData) when a new factory is
+                // created for the next call. This is a known WebRTC Android bug.
+                // The factory will be GC'd when no longer referenced.
                 factory = null
 
                 // Release EGL
@@ -553,47 +580,48 @@ class RTCCall(
         localAudioTrack?.setEnabled(true)
         peerConnection?.addTrack(localAudioTrack, listOf(STREAM_ID))
 
-        // Video track
-        videoCapturer = createVideoCapturer()
-        val capturer = videoCapturer  // CRASH-FIX Jan 2026: Local val for smart cast
-        val eglContext = eglBase?.eglBaseContext  // CRASH-FIX Jan 2026: Safe null check
-        if (capturer != null && eglContext != null) {
-            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
-            videoSource = factory?.createVideoSource(capturer.isScreencast)
-            capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
+        // Video track - only create for video calls
+        if (isVideoCall) {
+            videoCapturer = createVideoCapturer()
+            val capturer = videoCapturer
+            val eglContext = eglBase?.eglBaseContext
+            if (capturer != null && eglContext != null) {
+                surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
+                videoSource = factory?.createVideoSource(capturer.isScreencast)
+                capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
 
-            localVideoTrack = factory?.createVideoTrack(VIDEO_TRACK_ID, videoSource)
-            localVideoSink = ProxyVideoSink()
-            localVideoTrack?.addSink(localVideoSink)
-            localVideoTrack?.setEnabled(true)
-            peerConnection?.addTrack(localVideoTrack, listOf(STREAM_ID))
+                localVideoTrack = factory?.createVideoTrack(VIDEO_TRACK_ID, videoSource)
+                localVideoSink = ProxyVideoSink()
+                localVideoTrack?.addSink(localVideoSink)
+                localVideoTrack?.setEnabled(true)
+                peerConnection?.addTrack(localVideoTrack, listOf(STREAM_ID))
 
-            // LOCAL VIDEO FIX Jan 2026: Attach pending renderer if UI was ready before track
-            pendingLocalRenderer?.let { renderer ->
-                try {
-                    localVideoTrack?.addSink(renderer)
-                    logI("Attached pending local renderer to video track")
-                } catch (e: Exception) {
-                    logE("Failed to attach pending local renderer", e)
+                // Attach pending renderer if UI was ready before track
+                pendingLocalRenderer?.let { renderer ->
+                    try {
+                        localVideoTrack?.addSink(renderer)
+                        logI("Attached pending local renderer to video track")
+                    } catch (e: Exception) {
+                        logE("Failed to attach pending local renderer", e)
+                    }
+                    pendingLocalRenderer = null
                 }
-                pendingLocalRenderer = null
-            }
 
-            // FIXED Jan 2026: Only start camera for video calls
-            // This is called after video track is created, so it's safe to start capture
-            if (isVideoCall) {
+                // Start camera capture immediately for video calls
                 try {
                     videoCapturer?.startCapture(VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS)
-                    updateState { copy(isCameraEnabled = true) }
+                    updateState { copy(isCameraEnabled = true, isVideoReady = true) }
                     logI("Video call: camera started after track creation")
                 } catch (e: Exception) {
                     logE("Failed to start camera for video call", e)
+                    updateState { copy(isVideoReady = false) }
                 }
             } else {
-                logD("Voice call: camera NOT started")
+                logW("No camera available - video call falling back to audio only")
+                updateState { copy(isVideoReady = false) }
             }
         } else {
-            logW("No camera available - audio only call")
+            logD("Voice call: skipping video track creation entirely")
         }
     }
 
@@ -628,6 +656,7 @@ class RTCCall(
     }
 
     private fun createOffer() {
+        // Always accept video — enables mid-call video upgrade via renegotiation
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
@@ -664,6 +693,7 @@ class RTCCall(
     }
 
     private fun createAnswer() {
+        // Always accept video — enables mid-call video upgrade via renegotiation
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
@@ -774,6 +804,81 @@ class RTCCall(
         onLocalDescription?.invoke(sdp)
     }
 
+    /**
+     * Handle renegotiation offer received via data channel (mid-call video upgrade)
+     */
+    private fun handleRenegotiationOffer(sdp: String) {
+        executor.execute {
+            try {
+                remoteVideoSetUp = false  // Allow new video track
+                val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
+                peerConnection?.setRemoteDescription(object : SdpObserver {
+                    override fun onSetSuccess() {
+                        logI("Renegotiation remote offer set, creating answer")
+                        val constraints = MediaConstraints().apply {
+                            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
+                            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+                        }
+                        peerConnection?.createAnswer(object : SdpObserver {
+                            override fun onCreateSuccess(answerSdp: SessionDescription) {
+                                peerConnection?.setLocalDescription(object : SdpObserver {
+                                    override fun onSetSuccess() {
+                                        logI("Renegotiation answer set locally, sending via data channel")
+                                        val json = org.json.JSONObject().apply {
+                                            put("type", "RenegotiateAnswer")
+                                            put("sdp", answerSdp.description)
+                                        }.toString()
+                                        dataChannel?.let { channel ->
+                                            if (channel.state() == DataChannel.State.OPEN) {
+                                                val buffer = DataChannel.Buffer(
+                                                    java.nio.ByteBuffer.wrap(json.toByteArray()),
+                                                    false
+                                                )
+                                                channel.send(buffer)
+                                                logI("Renegotiation answer sent via data channel")
+                                            }
+                                        }
+                                    }
+                                    override fun onSetFailure(error: String) { logE("Renegotiation answer setLocal failed: $error") }
+                                    override fun onCreateSuccess(sdp: SessionDescription) {}
+                                    override fun onCreateFailure(error: String) {}
+                                }, answerSdp)
+                            }
+                            override fun onCreateFailure(error: String) { logE("Renegotiation createAnswer failed: $error") }
+                            override fun onSetSuccess() {}
+                            override fun onSetFailure(error: String) {}
+                        }, constraints)
+                    }
+                    override fun onSetFailure(error: String) { logE("Renegotiation setRemote failed: $error") }
+                    override fun onCreateSuccess(sdp: SessionDescription) {}
+                    override fun onCreateFailure(error: String) {}
+                }, offer)
+            } catch (e: Exception) {
+                logE("handleRenegotiationOffer error", e)
+            }
+        }
+    }
+
+    /**
+     * Handle renegotiation answer received via data channel
+     */
+    private fun handleRenegotiationAnswer(sdp: String) {
+        executor.execute {
+            try {
+                remoteVideoSetUp = false  // Allow new video track
+                val answer = SessionDescription(SessionDescription.Type.ANSWER, sdp)
+                peerConnection?.setRemoteDescription(object : SdpObserver {
+                    override fun onSetSuccess() { logI("Renegotiation answer applied successfully") }
+                    override fun onSetFailure(error: String) { logE("Renegotiation setRemote answer failed: $error") }
+                    override fun onCreateSuccess(sdp: SessionDescription) {}
+                    override fun onCreateFailure(error: String) {}
+                }, answer)
+            } catch (e: Exception) {
+                logE("handleRenegotiationAnswer error", e)
+            }
+        }
+    }
+
     private val peerConnectionObserver = object : PeerConnection.Observer {
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             logD("ICE gathering: $state")
@@ -863,7 +968,53 @@ class RTCCall(
         }
 
         override fun onRenegotiationNeeded() {
-            logD("Renegotiation needed")
+            logI("Renegotiation needed, initialConnectionEstablished=$initialConnectionEstablished")
+            if (!initialConnectionEstablished) {
+                // Initial negotiation handled by createOffer/createAnswer flow
+                return
+            }
+            // Mid-call renegotiation (e.g., camera enabled during voice call)
+            // Send new offer via data channel
+            executor.execute {
+                try {
+                    val constraints = MediaConstraints().apply {
+                        mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
+                        mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+                    }
+                    peerConnection?.createOffer(object : SdpObserver {
+                        override fun onCreateSuccess(sdp: SessionDescription) {
+                            logI("Renegotiation offer created")
+                            peerConnection?.setLocalDescription(object : SdpObserver {
+                                override fun onSetSuccess() {
+                                    logI("Renegotiation offer set locally, sending via data channel")
+                                    val json = org.json.JSONObject().apply {
+                                        put("type", "RenegotiateOffer")
+                                        put("sdp", sdp.description)
+                                    }.toString()
+                                    dataChannel?.let { channel ->
+                                        if (channel.state() == DataChannel.State.OPEN) {
+                                            val buffer = DataChannel.Buffer(
+                                                java.nio.ByteBuffer.wrap(json.toByteArray()),
+                                                false
+                                            )
+                                            channel.send(buffer)
+                                            logI("Renegotiation offer sent via data channel")
+                                        }
+                                    }
+                                }
+                                override fun onSetFailure(error: String) { logE("Renegotiation setLocal failed: $error") }
+                                override fun onCreateSuccess(sdp: SessionDescription) {}
+                                override fun onCreateFailure(error: String) {}
+                            }, sdp)
+                        }
+                        override fun onCreateFailure(error: String) { logE("Renegotiation createOffer failed: $error") }
+                        override fun onSetSuccess() {}
+                        override fun onSetFailure(error: String) {}
+                    }, constraints)
+                } catch (e: Exception) {
+                    logE("onRenegotiationNeeded error", e)
+                }
+            }
         }
 
         override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
@@ -939,12 +1090,34 @@ class RTCCall(
                 }
                 messageType == "CameraEnabled" -> {
                     logD("Remote camera enabled")
+                    // Reset remote video flag to allow new track from renegotiation
+                    remoteVideoSetUp = false
                 }
                 messageType == "CameraDisabled" -> {
                     logD("Remote camera disabled")
                 }
                 messageType == "LowBandwidthMode" -> {
                     logI("Remote requested low bandwidth mode")
+                }
+                messageType == "RenegotiateOffer" -> {
+                    logI("Received renegotiation offer via data channel")
+                    val sdp = try {
+                        org.json.JSONObject(rawMessage).getString("sdp")
+                    } catch (e: Exception) {
+                        logE("Failed to parse renegotiation offer", e)
+                        return
+                    }
+                    handleRenegotiationOffer(sdp)
+                }
+                messageType == "RenegotiateAnswer" -> {
+                    logI("Received renegotiation answer via data channel")
+                    val sdp = try {
+                        org.json.JSONObject(rawMessage).getString("sdp")
+                    } catch (e: Exception) {
+                        logE("Failed to parse renegotiation answer", e)
+                        return
+                    }
+                    handleRenegotiationAnswer(sdp)
                 }
             }
         }
@@ -1004,6 +1177,7 @@ class RTCCall(
      */
     private fun handleConnectionEstablished() {
         logI("Connection established - resetting reconnection state")
+        initialConnectionEstablished = true
 
         // Cancel any ongoing reconnection
         stopReconnection()

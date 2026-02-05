@@ -20,6 +20,7 @@ import com.doodlelabs.meshriderwave.domain.repository.PTTChannelRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -60,8 +61,8 @@ class PTTChannelRepositoryImpl @Inject constructor(
 
     override val channels: Flow<List<PTTChannel>> = _channels
 
-    override val joinedChannels: Flow<List<PTTChannel>> = _channels.map { channels ->
-        val joinedIds = _joinedChannelIds.value
+    // Feb 2026 FIX (Bug 29): combine both flows so joinedChannels reacts to BOTH changes
+    override val joinedChannels: Flow<List<PTTChannel>> = combine(_channels, _joinedChannelIds) { channels, joinedIds ->
         channels.filter { channel ->
             joinedIds.contains(channel.channelId.toHexString())
         }

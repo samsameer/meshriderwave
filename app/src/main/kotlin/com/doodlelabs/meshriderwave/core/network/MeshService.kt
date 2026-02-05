@@ -21,6 +21,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -35,6 +36,8 @@ import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
 import com.doodlelabs.meshriderwave.core.ptt.PTTManager
+import com.doodlelabs.meshriderwave.core.telecom.CallNotificationManager
+import com.doodlelabs.meshriderwave.core.telecom.TelecomCallManager
 import com.doodlelabs.meshriderwave.domain.repository.ContactRepository
 import com.doodlelabs.meshriderwave.domain.repository.SettingsRepository
 import com.doodlelabs.meshriderwave.presentation.MainActivity
@@ -72,8 +75,19 @@ class MeshService : Service() {
     @Inject
     lateinit var pttManager: PTTManager
 
+    @Inject
+    lateinit var callNotificationManager: CallNotificationManager
+
+    @Inject
+    lateinit var telecomCallManager: TelecomCallManager
+
     private val binder = MeshBinder()
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // Feb 2026 CRITICAL: WiFi MulticastLock — without this, Android discards
+    // all multicast packets to save battery. Required for PTT beacon discovery
+    // AND multicast RTP audio. Every PTT app (Zello, VoicePing) needs this.
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -208,8 +222,30 @@ class MeshService : Service() {
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
+    private var isListening = false
+
     private fun startListening() {
+        if (isListening) {
+            logI("startListening() already listening, skipping")
+            return
+        }
+        isListening = true
         logI("startListening()")
+
+        // Feb 2026 CRITICAL: Acquire WiFi MulticastLock FIRST
+        // Without this, Android's WiFi driver drops all multicast packets.
+        // This affects both PTT channel beacon (239.255.77.2:7778) and
+        // multicast RTP audio (239.255.0.x:5004).
+        try {
+            val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            multicastLock = wifiManager.createMulticastLock("MeshRiderPTT").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            logI("WiFi MulticastLock acquired — multicast reception enabled")
+        } catch (e: Exception) {
+            logE("Failed to acquire MulticastLock: ${e.message}")
+        }
 
         // Start P2P signaling server
         meshNetworkManager.start()
@@ -376,6 +412,7 @@ class MeshService : Service() {
     }
 
     private fun stopListening() {
+        isListening = false
         logI("stopListening()")
 
         // Stop all discovery components in reverse order
@@ -398,6 +435,15 @@ class MeshService : Service() {
         // Without this, audio threads/sockets leak after service stop
         pttManager.cleanup()
         logI("PTTManager stopped")
+
+        // Feb 2026: Release WiFi MulticastLock
+        multicastLock?.let {
+            if (it.isHeld) {
+                it.release()
+                logI("WiFi MulticastLock released")
+            }
+        }
+        multicastLock = null
     }
 
     private fun handleIncomingCall(call: MeshNetworkManager.IncomingCall) {
@@ -408,6 +454,45 @@ class MeshService : Service() {
         val senderKeyBase64 = android.util.Base64.encodeToString(
             call.senderPublicKey,
             android.util.Base64.NO_WRAP
+        )
+
+        val callerName = call.remoteAddress ?: "Unknown Caller"
+
+        // Register incoming call with Android Telecom framework FIRST
+        // Per developer.android.com: must post notification within 5 seconds of addCall()
+        scope.launch {
+            try {
+                telecomCallManager.addIncomingCall(
+                    displayName = callerName,
+                    address = call.remoteAddress ?: "unknown",
+                    isVideo = false,
+                    onAnswer = { callType ->
+                        logI("Telecom: onAnswer callType=$callType")
+                        // System requested answer (e.g., Bluetooth headset button)
+                        // CallActivity handles the actual WebRTC answer
+                    },
+                    onDisconnect = { cause ->
+                        logI("Telecom: onDisconnect cause=${cause.code}")
+                        callNotificationManager.cancelAll()
+                    },
+                    onSetActive = {
+                        logI("Telecom: onSetActive")
+                    },
+                    onSetInactive = {
+                        logI("Telecom: onSetInactive")
+                    }
+                )
+            } catch (e: Exception) {
+                logE("Failed to register incoming call with Telecom", e)
+            }
+        }
+
+        // Post CallStyle notification (within 5 seconds of addCall)
+        callNotificationManager.showIncomingCallNotification(
+            callerName = callerName,
+            remoteAddress = call.remoteAddress,
+            offer = call.offer,
+            senderKeyBase64 = senderKeyBase64
         )
 
         // Launch CallActivity for incoming call
@@ -437,8 +522,9 @@ class MeshService : Service() {
         @Volatile
         private var socketSetTime: Long = 0
 
-        // Socket timeout (10 seconds - if not retrieved, it's stale)
-        private const val SOCKET_TIMEOUT_MS = 10000L
+        // Socket timeout (30 seconds - if not retrieved, it's stale)
+        // Increased from 10s: Activity launch + render can take time on slower devices
+        private const val SOCKET_TIMEOUT_MS = 30000L
 
         /**
          * Store socket for CallActivity to retrieve

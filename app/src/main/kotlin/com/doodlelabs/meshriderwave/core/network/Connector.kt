@@ -320,6 +320,8 @@ class Connector @Inject constructor(
     private fun createSocket(address: InetSocketAddress): Socket {
         val socket = Socket()
         try {
+            socket.keepAlive = true
+            socket.tcpNoDelay = true
             socket.connect(address, connectTimeout)
             return socket
         } catch (e: Exception) {

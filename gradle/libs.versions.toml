@@ -55,6 +55,10 @@ camerax = "1.4.1"
 # Google Play Services
 play-services-location = "21.3.0"
 
+# Telecom & UWB (2026)
+core-telecom = "1.0.0"
+core-uwb = "1.0.0-alpha09"
+
 # Testing
 junit = "4.13.2"
 junit-ext = "1.2.1"
@@ -130,6 +134,10 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 
 # Google Play Services
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "play-services-location" }
+
+# Telecom & UWB (2026)
+core-telecom = { group = "androidx.core", name = "core-telecom", version.ref = "core-telecom" }
+core-uwb = { group = "androidx.core.uwb", name = "uwb", version.ref = "core-uwb" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

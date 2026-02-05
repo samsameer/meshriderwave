@@ -41,6 +41,14 @@ class ChannelsViewModel @Inject constructor(
         // Initialize PTTManager for audio
         pttManager.initialize()
 
+        // Feb 2026 FIX (Bug 16): Set PTTManager's ownPublicKey so broadcasts and member checks work
+        viewModelScope.launch {
+            val keyPair = settingsRepository.getOrCreateKeyPair()
+            pttManager.ownPublicKey = keyPair.publicKey
+            pttManager.ownSecretKey = keyPair.secretKey
+            Log.d(TAG, "Set PTTManager keys from settings")
+        }
+
         // Set up callback to register joiner's address when someone joins our channel
         pttChannelBeacon.onChannelJoinRequest = { channelId, peerKey, peerName, peerIp ->
             Log.i(TAG, "Join request received: $peerName ($peerIp) wants to join channel $channelId")
@@ -104,8 +112,14 @@ class ChannelsViewModel @Inject constructor(
         }
     }
 
+    // Cache own public key for ownership checks
+    private var ownPublicKey: ByteArray = ByteArray(0)
+
     private fun observeChannels() {
         viewModelScope.launch {
+            // Load own key FIRST before observing channels (fixes isOwner race condition)
+            ownPublicKey = settingsRepository.getOrCreateKeyPair().publicKey
+
             pttChannelRepository.channels.collect { channels ->
                 val uiModels = channels.map { channel ->
                     ChannelUiModel(
@@ -114,7 +128,8 @@ class ChannelsViewModel @Inject constructor(
                         frequency = channel.frequency,
                         onlineCount = channel.members.size,
                         priority = channel.priority.name,
-                        hasActivity = false
+                        hasActivity = false,
+                        isOwner = channel.createdBy.contentEquals(ownPublicKey)
                     )
                 }
                 _uiState.update { it.copy(channels = uiModels, isLoading = false) }
@@ -129,6 +144,8 @@ class ChannelsViewModel @Inject constructor(
         }
     }
 
+    private var transmitStateJob: kotlinx.coroutines.Job? = null
+
     private fun observePTTState() {
         viewModelScope.launch {
             pttManager.activeChannel.collect { channel ->
@@ -142,11 +159,30 @@ class ChannelsViewModel @Inject constructor(
                                 onlineCount = it.members.size,
                                 priority = it.priority.name,
                                 hasActivity = true
-                            )
+                            ),
+                            memberCount = it.members.size
                         )
                     }
+                    // Observe floor control state for the active channel
+                    observeTransmitState(it)
                 } ?: run {
-                    _uiState.update { it.copy(activeChannel = null) }
+                    transmitStateJob?.cancel()
+                    _uiState.update { it.copy(activeChannel = null, floorState = "IDLE", activeSpeaker = null) }
+                }
+            }
+        }
+    }
+
+    private fun observeTransmitState(channel: com.doodlelabs.meshriderwave.domain.model.group.PTTChannel) {
+        transmitStateJob?.cancel()
+        transmitStateJob = viewModelScope.launch {
+            pttManager.getTransmitState(channel).collect { txState ->
+                _uiState.update { state ->
+                    state.copy(
+                        floorState = txState.status.name,
+                        activeSpeaker = txState.currentSpeaker?.name,
+                        isTransmitting = txState.status == com.doodlelabs.meshriderwave.domain.model.group.PTTTransmitState.Status.TRANSMITTING
+                    )
                 }
             }
         }
@@ -281,29 +317,53 @@ class ChannelsViewModel @Inject constructor(
         }
     }
 
-    fun joinChannel(channelId: String) {
+    /**
+     * Join a local channel (MY CHANNELS section)
+     * Feb 2026 FIX (Bug 7): Find full channelId by shortId instead of using shortId as channelId
+     */
+    fun joinChannel(shortId: String) {
         viewModelScope.launch {
             try {
-                val keyPair = settingsRepository.getOrCreateKeyPair()
-                settingsRepository.username.first().let { username ->
-                    val member = PTTMember(
-                        publicKey = keyPair.publicKey,
-                        name = username,
-                        role = PTTRole.MEMBER,
-                        priority = 50,
-                        canTransmit = true,
-                        isMuted = false,
-                        joinedAt = System.currentTimeMillis()
-                    )
+                // Find the full channel by shortId
+                val channel = pttChannelRepository.channels.first().find { it.shortId == shortId }
+                if (channel == null) {
+                    Log.e(TAG, "joinChannel: Channel not found for shortId: $shortId")
+                    _uiState.update { it.copy(error = "Channel not found") }
+                    return@launch
+                }
 
-                    pttChannelRepository.joinChannel(
-                        channelId = channelId.hexToByteArray(),
-                        member = member
-                    ).onSuccess {
-                        Log.i(TAG, "Joined channel: $channelId")
-                    }.onFailure { e ->
-                        Log.e(TAG, "Failed to join channel", e)
-                    }
+                val keyPair = settingsRepository.getOrCreateKeyPair()
+                val username = settingsRepository.username.first()
+                val member = PTTMember(
+                    publicKey = keyPair.publicKey,
+                    name = username,
+                    role = PTTRole.MEMBER,
+                    priority = 50,
+                    canTransmit = true,
+                    isMuted = false,
+                    joinedAt = System.currentTimeMillis()
+                )
+
+                pttChannelRepository.joinChannel(
+                    channelId = channel.channelId,  // Full 16-byte channelId
+                    member = member
+                ).onSuccess {
+                    Log.i(TAG, "Joined channel: ${channel.name} ($shortId)")
+                    // Auto-set as active channel
+                    pttManager.setActiveChannel(channel)
+                    _uiState.update { it.copy(
+                        activeChannel = ChannelUiModel(
+                            id = channel.shortId,
+                            name = channel.name,
+                            frequency = channel.displayFrequency,
+                            onlineCount = channel.members.size,
+                            priority = channel.priority.name,
+                            hasActivity = true
+                        )
+                    )}
+                }.onFailure { e ->
+                    Log.e(TAG, "Failed to join channel", e)
+                    _uiState.update { it.copy(error = "Failed to join: ${e.message}") }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to join channel", e)
@@ -311,17 +371,39 @@ class ChannelsViewModel @Inject constructor(
         }
     }
 
-    fun leaveChannel(channelId: String) {
+    /**
+     * Leave/remove a channel
+     * Feb 2026 FIX (Bug 8): Find full channelId by shortId
+     */
+    fun leaveChannel(shortId: String) {
         viewModelScope.launch {
             try {
+                val channel = pttChannelRepository.channels.first().find { it.shortId == shortId }
+                if (channel == null) {
+                    Log.e(TAG, "leaveChannel: Channel not found for shortId: $shortId")
+                    return@launch
+                }
+
                 val keyPair = settingsRepository.getOrCreateKeyPair()
+                val isOwner = channel.createdBy.contentEquals(keyPair.publicKey)
+
+                // Leave multicast talkgroup first
+                pttManager.setActiveChannel(null)
+
                 pttChannelRepository.leaveChannel(
-                    channelId = channelId.hexToByteArray(),
+                    channelId = channel.channelId,  // Full 16-byte channelId
                     memberPublicKey = keyPair.publicKey
                 )
 
+                // If we don't own the channel, also delete from local repo
+                if (!isOwner) {
+                    pttChannelRepository.deleteChannel(channel.channelId)
+                    pttChannelBeacon.clearDiscoveredChannel(channel.channelId)
+                    Log.i(TAG, "Left and removed non-owned channel: ${channel.name}")
+                }
+
                 // Clear active if leaving active channel
-                if (_uiState.value.activeChannel?.id == channelId) {
+                if (_uiState.value.activeChannel?.id == shortId) {
                     _uiState.update { it.copy(activeChannel = null) }
                 }
             } catch (e: Exception) {
@@ -332,26 +414,24 @@ class ChannelsViewModel @Inject constructor(
 
     fun setActiveChannel(channelId: String) {
         viewModelScope.launch {
-            // Jan 2026 FIX: Search in BOTH local channels AND discovered channels
-            // Previously only searched local channels, causing discovered channel joins to fail
+            // Empty = clear active (back from talk screen)
+            if (channelId.isEmpty()) {
+                _uiState.update { it.copy(activeChannel = null) }
+                Log.d(TAG, "setActiveChannel: cleared")
+                return@launch
+            }
+
             val channel = _uiState.value.channels.find { it.id == channelId }
                 ?: _uiState.value.discoveredChannels.find { it.id == channelId }
 
-            Log.d(TAG, "setActiveChannel: $channelId, found=${channel?.name ?: "null"}, joined=${_uiState.value.joinedChannelIds.contains(channelId)}")
-
             if (channel != null && _uiState.value.joinedChannelIds.contains(channelId)) {
                 _uiState.update { it.copy(activeChannel = channel) }
-                Log.d(TAG, "setActiveChannel: UI state updated to ${channel.name}")
 
-                // CRITICAL: Sync with PTTManager so audio transmission works
+                // Sync with PTTManager so audio works
                 pttChannelRepository.channels.first().find { it.shortId == channelId }?.let { pttChannel ->
                     pttManager.setActiveChannel(pttChannel)
-                    Log.i(TAG, "setActiveChannel: PTTManager synced to ${pttChannel.name}")
-                } ?: run {
-                    Log.e(TAG, "setActiveChannel: Channel not found in repository! channelId=$channelId")
+                    Log.i(TAG, "setActiveChannel: ${pttChannel.name}")
                 }
-            } else {
-                Log.w(TAG, "setActiveChannel: Failed - channel=${channel?.name}, joined=${_uiState.value.joinedChannelIds}")
             }
         }
     }
@@ -400,44 +480,60 @@ class ChannelsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Feb 2026 FIX (Bug 9): Sync active channel synchronously to avoid race condition
+     */
     fun startTransmit() {
         viewModelScope.launch {
             try {
-                val channel = pttManager.activeChannel.value
-                Log.d(TAG, "startTransmit: activeChannel=${channel?.name ?: "NULL"}")
+                var channel = pttManager.activeChannel.value
 
                 if (channel == null) {
-                    Log.w(TAG, "startTransmit: No active channel in PTTManager!")
-                    // Try to get from UI state and set it
-                    _uiState.value.activeChannel?.let { uiChannel ->
-                        Log.d(TAG, "startTransmit: Setting active channel from UI: ${uiChannel.name}")
-                        setActiveChannel(uiChannel.id)
+                    // Sync from UI state — find full channel in repo directly (no async)
+                    val uiChannel = _uiState.value.activeChannel
+                    if (uiChannel != null) {
+                        val fullChannel = pttChannelRepository.channels.first()
+                            .find { it.shortId == uiChannel.id }
+                        if (fullChannel != null) {
+                            pttManager.setActiveChannel(fullChannel)
+                            channel = fullChannel
+                        }
                     }
-                    return@launch
+                    if (channel == null) {
+                        _uiState.update { it.copy(error = "No active channel") }
+                        return@launch
+                    }
                 }
 
-                Log.i(TAG, "startTransmit: Requesting floor for ${channel.name}")
+                Log.i(TAG, "startTransmit: ${channel.name}")
                 pttManager.requestFloor(channel)
-                _uiState.update { it.copy(isTransmitting = true) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start transmit", e)
+                _uiState.update { it.copy(error = "PTT failed: ${e.message}", isTransmitting = false) }
             }
         }
     }
 
     fun stopTransmit() {
+        Log.i(TAG, "stopTransmit: CALLED")
         viewModelScope.launch {
             try {
                 val channel = pttManager.activeChannel.value
                 Log.d(TAG, "stopTransmit: activeChannel=${channel?.name ?: "NULL"}")
 
-                channel?.let {
-                    Log.i(TAG, "stopTransmit: Releasing floor for ${it.name}")
-                    pttManager.releaseFloor(it)
+                if (channel != null) {
+                    pttManager.releaseFloor(channel)
+                } else {
+                    // Feb 2026 FIX: Even if active channel is null, FORCE stop audio
+                    Log.w(TAG, "stopTransmit: No active channel — force stopping audio")
+                    pttManager.forceStopAllTransmission()
                 }
                 _uiState.update { it.copy(isTransmitting = false) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to stop transmit", e)
+                // Still force stop on error
+                pttManager.forceStopAllTransmission()
+                _uiState.update { it.copy(isTransmitting = false) }
             }
         }
     }
@@ -491,10 +587,13 @@ class ChannelsViewModel @Inject constructor(
 
 data class ChannelsUiState(
     val channels: List<ChannelUiModel> = emptyList(),
-    val discoveredChannels: List<ChannelUiModel> = emptyList(),  // Jan 2026: Channels from other devices
+    val discoveredChannels: List<ChannelUiModel> = emptyList(),
     val joinedChannelIds: Set<String> = emptySet(),
     val activeChannel: ChannelUiModel? = null,
     val isTransmitting: Boolean = false,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val floorState: String = "IDLE",         // IDLE, REQUESTING, GRANTED, DENIED, QUEUED
+    val activeSpeaker: String? = null,       // Name of current floor holder
+    val memberCount: Int = 0                 // Members in active channel
 )

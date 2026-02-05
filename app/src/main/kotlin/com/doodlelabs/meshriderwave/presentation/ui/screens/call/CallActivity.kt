@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
@@ -41,6 +42,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
 import com.doodlelabs.meshriderwave.core.network.MeshService
+import com.doodlelabs.meshriderwave.core.telecom.CallNotificationManager
+import com.doodlelabs.meshriderwave.core.telecom.TelecomCallManager
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
@@ -70,6 +73,12 @@ class CallActivity : ComponentActivity() {
 
     @Inject
     lateinit var contactRepository: ContactRepository
+
+    @Inject
+    lateinit var callNotificationManager: CallNotificationManager
+
+    @Inject
+    lateinit var telecomCallManager: TelecomCallManager
 
     private var rtcCall: RTCCall? = null
     private var localRenderer: SurfaceViewRenderer? = null
@@ -204,25 +213,64 @@ class CallActivity : ComponentActivity() {
                 @Suppress("UNUSED_VARIABLE")
                 val tick = timerTick
 
-                // Track video enabled state
-                // FIXED Jan 2026: Show video if camera is enabled OR if isVideoCall (to show preview early)
-                val showVideo = isVideoCall || callState.isCameraEnabled
+                // Show video only when camera is actually enabled and producing frames
+                val showVideo = callState.isCameraEnabled && callState.isVideoReady
+
+                val contactDisplayName = directPeerName ?: contactId ?: remoteAddress ?: "Unknown"
+
+                // Predictive back gesture — confirm end call if connected
+                var showEndCallDialog by remember { mutableStateOf(false) }
+                BackHandler {
+                    if (callState.isConnected) {
+                        showEndCallDialog = true
+                    } else {
+                        // Not connected — just hang up
+                        rtcCall?.hangup()
+                        finish()
+                    }
+                }
+
+                if (showEndCallDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showEndCallDialog = false },
+                        title = { Text("End Call?", color = PremiumColors.TextPrimary) },
+                        text = { Text("Are you sure you want to end this call?", color = PremiumColors.TextSecondary) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showEndCallDialog = false
+                                rtcCall?.hangup()
+                                finish()
+                            }) { Text("End Call", color = PremiumColors.NeonMagenta) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showEndCallDialog = false }) {
+                                Text("Cancel", color = PremiumColors.TextSecondary)
+                            }
+                        },
+                        containerColor = PremiumColors.SpaceGray
+                    )
+                }
+
+                // Notification lifecycle: show ongoing on connect, cancel incoming on answer
+                LaunchedEffect(callState.isConnected) {
+                    if (callState.isConnected) {
+                        callNotificationManager.cancelIncomingNotification()
+                        callNotificationManager.showOngoingCallNotification(contactDisplayName)
+                    }
+                }
 
                 PremiumCallScreen(
                     callState = callState,
                     isOutgoing = isOutgoing,
-                    contactName = directPeerName ?: contactId ?: remoteAddress ?: "Unknown",
+                    contactName = contactDisplayName,
                     showVideo = showVideo,
                     eglContext = rtcCall?.eglBaseContext,
                     onLocalRendererReady = { renderer ->
                         localRenderer = renderer
-                        // LOCAL VIDEO FIX Jan 2026: Use new method that handles timing
-                        // If track isn't ready yet, renderer will be stored and attached later
                         rtcCall?.setLocalVideoRenderer(renderer)
                     },
                     onRemoteRendererReady = { renderer ->
                         remoteRenderer = renderer
-                        // VIDEO FIX Jan 2026: Attach pending video track if we received it before renderer was ready
                         pendingRemoteVideoTrack?.let { track ->
                             try {
                                 track.addSink(renderer)
@@ -235,14 +283,23 @@ class CallActivity : ComponentActivity() {
                     },
                     onToggleMic = { rtcCall?.setMicrophoneEnabled(!callState.isMicEnabled) },
                     onToggleCamera = { rtcCall?.setCameraEnabled(!callState.isCameraEnabled) },
-                    onToggleSpeaker = { rtcCall?.setSpeakerEnabled(!callState.isSpeakerEnabled) },
+                    onToggleSpeaker = {
+                        // Use Telecom framework audio routing (proper API)
+                        if (callState.isSpeakerEnabled) {
+                            telecomCallManager.switchToEarpiece()
+                        } else {
+                            telecomCallManager.switchToSpeaker()
+                        }
+                        // Also update RTCCall state for UI
+                        rtcCall?.setSpeakerEnabled(!callState.isSpeakerEnabled)
+                    },
                     onSwitchCamera = { rtcCall?.switchCamera() },
                     onAccept = {
-                        // Accept incoming call - create peer connection with received offer
+                        callNotificationManager.cancelIncomingNotification()
                         rtcCall?.createPeerConnection(offer)
                     },
                     onDecline = {
-                        // Decline incoming call - notify remote and close
+                        callNotificationManager.cancelIncomingNotification()
                         lifecycleScope.launch {
                             declineCall()
                         }
@@ -394,6 +451,9 @@ class CallActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // Cancel all call notifications
+        callNotificationManager.cancelAll()
+
         // FIXED Jan 2026: Proper cleanup order - RTCCall first, then renderers
         // This prevents "frame delivered to released renderer" crashes
 
@@ -701,32 +761,34 @@ private fun CallContent(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Control buttons (when connected or outgoing)
+        // Floating call controls (WhatsApp 2025 style)
         AnimatedVisibility(
             visible = callState.isActive || isOutgoing,
             enter = fadeIn() + slideInVertically { it },
             exit = fadeOut() + slideOutVertically { it }
         ) {
-            PremiumCallControls(
+            FloatingCallControls(
                 callState = callState,
                 showVideoControls = showVideoControls,
                 onToggleMic = onToggleMic,
                 onToggleCamera = onToggleCamera,
                 onToggleSpeaker = onToggleSpeaker,
-                onSwitchCamera = onSwitchCamera
+                onSwitchCamera = onSwitchCamera,
+                onHangup = onHangup
             )
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Accept/Decline or Hangup buttons
-        CallActionButtons(
-            callState = callState,
-            isOutgoing = isOutgoing,
-            onAccept = onAccept,
-            onDecline = onDecline,
-            onHangup = onHangup
-        )
+        // Incoming call: Swipe to answer/decline
+        // Outgoing/connected: no action buttons (hangup is in FloatingCallControls)
+        if (!isOutgoing && callState.status == CallState.Status.IDLE) {
+            SwipeToAnswerButton(
+                onAccept = onAccept,
+                onDecline = onDecline,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(48.dp))
     }

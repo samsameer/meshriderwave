@@ -13,6 +13,7 @@ import com.doodlelabs.meshriderwave.core.crypto.CryptoManager
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
+import com.doodlelabs.meshriderwave.core.util.logW
 import com.doodlelabs.meshriderwave.domain.model.Contact
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -21,8 +22,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.net.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -97,7 +98,13 @@ class MeshNetworkManager @Inject constructor(
                         val server = serverSocket ?: break
                         val socket = server.accept()
                         logD("start() incoming connection from ${socket.remoteSocketAddress}")
-                        handleIncomingConnection(socket)
+                        // FIX Jan 2026: Launch each connection handler in its own coroutine
+                        // so the accept loop isn't blocked waiting for handleIncomingConnection
+                        // to complete. This was causing the accept loop to stall when a call
+                        // connection was being processed (readMessage blocks for up to 10s).
+                        launch {
+                            handleIncomingConnection(socket)
+                        }
                     } catch (e: SocketException) {
                         if (isActive) logE("start() socket error", e)
                     }
@@ -169,12 +176,59 @@ class MeshNetworkManager @Inject constructor(
                     return@withContext CallResult.Error("Encryption failed")
                 }
 
-                // Send
-                sendMessage(socket, encrypted)
+                // Configure socket for call signaling
+                socket.keepAlive = true
+                socket.tcpNoDelay = true
+                logI("initiateCall: sending offer to ${socket.inetAddress?.hostAddress}, socket connected=${socket.isConnected}")
 
-                // Wait for response
-                val responseBytes = readMessage(socket)
+                // CRITICAL: Use single stream pair for entire socket lifecycle
+                val rawOut = socket.getOutputStream()
+                val rawIn = socket.getInputStream()
+                val outputStream = DataOutputStream(rawOut)
+                val inputStream = DataInputStream(rawIn)
+
+                // Send offer
+                outputStream.writeInt(encrypted.size)
+                outputStream.write(encrypted)
+                outputStream.flush()
+                logD("initiateCall: offer sent (${encrypted.size} bytes), waiting for answer with 30s timeout...")
+
+                // Wait for response — 30s timeout because receiver needs to:
+                // 1. Decrypt offer  2. Show incoming call UI  3. User taps Accept
+                // 4. Create WebRTC answer  5. Encrypt and send back
+                socket.soTimeout = 30000
+
+                // DEBUG: Check what the raw input stream reports
+                logD("initiateCall: socket state: closed=${socket.isClosed} connected=${socket.isConnected} inputShutdown=${socket.isInputShutdown}")
+                logD("initiateCall: rawIn.available()=${rawIn.available()}")
+
+                val responseBytes = try {
+                    logD("initiateCall: calling readInt() on DataInputStream...")
+                    val length = inputStream.readInt()
+                    logD("initiateCall: response length=$length")
+                    if (length <= 0 || length > 1024 * 1024) {
+                        logW("initiateCall: invalid response length=$length")
+                        null
+                    } else {
+                        val data = ByteArray(length)
+                        inputStream.readFully(data)
+                        logD("initiateCall: response received ${data.size} bytes")
+                        data
+                    }
+                } catch (e: SocketTimeoutException) {
+                    logW("initiateCall: TIMEOUT waiting for answer (30s)")
+                    null
+                } catch (e: java.io.EOFException) {
+                    // Debug: try raw read to see what's really on the stream
+                    logW("initiateCall: EOF from readInt()! closed=${socket.isClosed} connected=${socket.isConnected} available=${try { rawIn.available() } catch (_: Exception) { -1 }}")
+                    null
+                } catch (e: Exception) {
+                    logE("initiateCall: error reading answer: ${e.javaClass.simpleName}: ${e.message}")
+                    null
+                }
+
                 if (responseBytes == null) {
+                    logE("initiateCall: NO RESPONSE")
                     socket.close()
                     return@withContext CallResult.Error("No response")
                 }
@@ -226,8 +280,14 @@ class MeshNetworkManager @Inject constructor(
      */
     private suspend fun handleIncomingConnection(socket: Socket) {
         try {
+            // Enable keepalive and disable Nagle for signaling
+            socket.keepAlive = true
+            socket.tcpNoDelay = true
+            logD("handleIncomingConnection: from ${socket.remoteSocketAddress}, connected=${socket.isConnected}")
+
             val data = readMessage(socket)
             if (data == null) {
+                logW("handleIncomingConnection: readMessage returned null, closing socket")
                 socket.close()
                 return
             }
@@ -255,6 +315,7 @@ class MeshNetworkManager @Inject constructor(
             when (action) {
                 "call" -> {
                     val offer = message.getString("offer")
+                    logI("handleIncomingConnection: CALL received, socket open=${!socket.isClosed} connected=${socket.isConnected}")
                     _incomingCalls.emit(
                         IncomingCall(
                             socket = socket,
@@ -263,6 +324,8 @@ class MeshNetworkManager @Inject constructor(
                             remoteAddress = (socket.remoteSocketAddress as? InetSocketAddress)?.hostString
                         )
                     )
+                    logI("handleIncomingConnection: IncomingCall emitted, socket still open=${!socket.isClosed}")
+                    // IMPORTANT: Do NOT close socket here - it stays open for sendCallResponse later
                 }
                 "ping" -> {
                     // Respond with pong
@@ -315,12 +378,15 @@ class MeshNetworkManager @Inject constructor(
     suspend fun sendCallResponse(socket: Socket, recipientKey: ByteArray, answer: String?) {
         withContext(ioDispatcher) {
             try {
+                logI("sendCallResponse: socket closed=${socket.isClosed} connected=${socket.isConnected} action=${if (answer != null) "connected" else "declined"}")
                 val message = if (answer != null) {
                     JSONObject().put("action", "connected").put("answer", answer)
                 } else {
                     JSONObject().put("action", "declined")
                 }
                 sendEncryptedMessage(socket, recipientKey, message)
+            } catch (e: java.net.SocketException) {
+                logW("sendCallResponse: socket closed")
             } catch (e: Exception) {
                 logE("sendCallResponse() error", e)
             }
@@ -337,47 +403,66 @@ class MeshNetworkManager @Inject constructor(
         sendMessage(socket, encrypted)
     }
 
+    /**
+     * Send length-prefixed message using DataOutputStream.
+     * Uses the socket's raw output stream directly — no BufferedOutputStream wrapper.
+     *
+     * CRITICAL FIX Jan 2026: Previously created a new BufferedOutputStream per call,
+     * violating SEI CERT FIO06-J. BufferedOutputStream eagerly buffers and creating
+     * multiple wrappers can cause data corruption. DataOutputStream writes directly
+     * to the underlying stream with no internal buffering issues.
+     *
+     * @see <a href="https://wiki.sei.cmu.edu/confluence/display/java/FIO06-J">SEI CERT FIO06-J</a>
+     */
     private fun sendMessage(socket: Socket, data: ByteArray) {
-        val out = BufferedOutputStream(socket.getOutputStream())
-        // Simple length-prefixed protocol
-        out.write((data.size shr 24) and 0xFF)
-        out.write((data.size shr 16) and 0xFF)
-        out.write((data.size shr 8) and 0xFF)
-        out.write(data.size and 0xFF)
+        val out = DataOutputStream(socket.getOutputStream())
+        out.writeInt(data.size)
         out.write(data)
         out.flush()
     }
 
-    private fun readMessage(socket: Socket): ByteArray? {
-        val input = BufferedInputStream(socket.getInputStream())
-        socket.soTimeout = 10000
+    /**
+     * Read length-prefixed message using DataInputStream.
+     * Uses the socket's raw input stream directly — no BufferedInputStream wrapper.
+     *
+     * CRITICAL FIX Jan 2026: Previously created a new BufferedInputStream per call.
+     * BufferedInputStream reads ahead into an 8KB internal buffer. When the wrapper
+     * was discarded, buffered-but-unread bytes were LOST from the socket stream.
+     * This caused the caller's readMessage() to get EOF because the receiver's
+     * BufferedInputStream had consumed bytes beyond the first message.
+     * DataInputStream.readFully() reads exactly the requested bytes with no buffering.
+     *
+     * @see <a href="https://wiki.sei.cmu.edu/confluence/display/java/FIO06-J">SEI CERT FIO06-J</a>
+     */
+    private fun readMessage(socket: Socket, timeoutMs: Int = 10000): ByteArray? {
+        logD("readMessage: START timeout=${timeoutMs}ms closed=${socket.isClosed} connected=${socket.isConnected} addr=${socket.inetAddress?.hostAddress}")
+        return try {
+            socket.soTimeout = timeoutMs
+            val input = DataInputStream(socket.getInputStream())
 
-        // Read length
-        val lengthBytes = ByteArray(4)
-        var read = 0
-        while (read < 4) {
-            val r = input.read(lengthBytes, read, 4 - read)
-            if (r < 0) return null
-            read += r
+            logD("readMessage: waiting for length int...")
+            val length = input.readInt()
+            logD("readMessage: length=$length from ${socket.inetAddress?.hostAddress}")
+
+            if (length <= 0 || length > 1024 * 1024) {
+                logW("readMessage: invalid length=$length")
+                return null
+            }
+
+            val data = ByteArray(length)
+            input.readFully(data)
+            logD("readMessage: SUCCESS read ${data.size} bytes")
+            data
+        } catch (e: SocketTimeoutException) {
+            logW("readMessage: TIMEOUT after ${timeoutMs}ms, socket=${socket.inetAddress?.hostAddress}")
+            null
+        } catch (e: java.io.EOFException) {
+            logW("readMessage: EOF from ${socket.inetAddress?.hostAddress} closed=${socket.isClosed} connected=${socket.isConnected}")
+            null
+        } catch (e: Exception) {
+            logE("readMessage: EXCEPTION ${e.javaClass.simpleName}: ${e.message} closed=${socket.isClosed}")
+            null
         }
-
-        val length = ((lengthBytes[0].toInt() and 0xFF) shl 24) or
-                ((lengthBytes[1].toInt() and 0xFF) shl 16) or
-                ((lengthBytes[2].toInt() and 0xFF) shl 8) or
-                (lengthBytes[3].toInt() and 0xFF)
-
-        if (length <= 0 || length > 1024 * 1024) return null // Max 1MB
-
-        // Read data
-        val data = ByteArray(length)
-        read = 0
-        while (read < length) {
-            val r = input.read(data, read, length - read)
-            if (r < 0) return null
-            read += r
-        }
-
-        return data
     }
 
     /**

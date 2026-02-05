@@ -148,6 +148,12 @@ dependencies {
     // Location Services
     implementation(libs.play.services.location)
 
+    // Core-Telecom (Android call system integration)
+    implementation(libs.core.telecom)
+
+    // UWB (Ultra-Wideband precise ranging)
+    implementation(libs.core.uwb)
+
     // QR Code
     implementation(libs.zxing.core)
     implementation(libs.zxing.embedded)

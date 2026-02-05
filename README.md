@@ -11,22 +11,29 @@
 [![Compose](https://img.shields.io/badge/compose-2024.12.01-green)]()
 [![License](https://img.shields.io/badge/license-proprietary-red)]()
 
-[Quick Start](#quick-start) • [Features](#features) • [Architecture](#architecture) • [Screenshots](#screenshots) • [Documentation](#documentation)
+[Quick Start](#quick-start) | [Features](#features) | [Architecture](#architecture) | [ATAK Plugin](#atak-plugin) | [Documentation](#documentation)
 
 </div>
 
 ---
 
-## What's New (January 2026)
+## What's New (February 2026)
 
-### v2.5.0 - Tactical Dashboard & MCPTT Update
+### v2.5.1 - Core-Telecom & ATAK Architecture Update
 
-- **🎖️ Military Tactical Dashboard** - DEFCON-style readiness levels, radar animation, Starlink-inspired UI
-- **📡 3GPP MCPTT Floor Control** - Full compliance with TS 24.379/380/381
-- **🌍 German Localization** - Bundeswehr military terminology (291 strings)
-- **📱 Responsive Design** - Phones, tablets, landscape/portrait support
-- **🔧 ATAK Plugin Enhancements** - TacticalOverlayWidget, MilitaryPTTButton, TeamMarkerManager
-- **🐛 Critical Bug Fixes** - Samsung tablet crash, video one-way, memory leaks
+- **Android Core-Telecom Integration** - Proper VoIP call registration via `CallsManager.addCall()`, audio endpoint routing, CallStyle notifications
+- **ATAK Plugin Overhaul** - Refactored to official 3-class pattern (PluginLifecycle / MapComponent / DropDownReceiver) per CivTAK/TAK SDK docs
+- **CoT Dispatching** - Blue Force Tracking markers placed on ATAK map via `CotMapComponent.getInternalDispatcher()`
+- **Mid-Call Video Renegotiation** - Enable/disable camera during active calls via WebRTC data channel SDP exchange
+- **Settings Redesign** - Calls, Audio/Video, Notifications sections with telecom integration info
+
+### v2.5.0 - Tactical Dashboard & MCPTT (January 2026)
+
+- **Military Tactical Dashboard** - DEFCON-style readiness levels, radar animation, Starlink-inspired UI
+- **3GPP MCPTT Floor Control** - Full compliance with TS 24.379/380/381
+- **German Localization** - Bundeswehr military terminology (291 strings)
+- **Responsive Design** - Phones, tablets, landscape/portrait support
+- **Critical Bug Fixes** - Samsung tablet crash, video one-way, memory leaks
 
 ---
 
@@ -43,6 +50,7 @@ MeshRider Wave is a tactical Push-to-Talk (PTT) application designed for deploym
 | **Target SDK** | 35 (Android 15) |
 | **Language** | Kotlin 2.1.0 |
 | **UI Framework** | Jetpack Compose + Material 3 |
+| **Telecom** | Core-Telecom Jetpack (`CallsManager`) |
 | **Localization** | English, German (Deutsch) |
 | **Status** | Beta (Field Testing Phase) |
 
@@ -67,10 +75,13 @@ cd meshrider-wave-android
 # Set Java 17 (if needed)
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-# Build debug APK
+# Build debug APK (main app)
 ./gradlew assembleDebug
 
-# Install on connected device
+# Build ATAK plugin APK
+./gradlew :atak-plugin:assembleDebug
+
+# Install main app on connected device
 ./gradlew installDebug
 
 # Build release APK
@@ -79,7 +90,7 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 ### First Run
 
-1. Grant required permissions (Microphone, Camera, Location, Nearby Devices)
+1. Grant required permissions (Microphone, Camera, Location, Nearby Devices, Notifications)
 2. Configure network settings for your MeshRider subnet (default: 10.223.x.x)
 3. Scan QR code or enter contact details to add peers
 4. Join or create a talkgroup
@@ -93,32 +104,41 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| **PTT Voice** | Half-duplex voice with 3GPP MCPTT floor control | ✅ Complete |
-| **Opus Codec** | 6-24 kbps voice compression (10-40x) | ✅ Complete |
-| **Multicast RTP** | Efficient one-to-many transmission | ✅ Complete |
-| **E2E Encryption** | libsodium + MLS group encryption | ✅ Complete |
-| **Tactical Dashboard** | DEFCON readiness, radar, military UI | ✅ Complete |
-| **Blue Force Tracking** | Real-time GPS location sharing | ✅ Complete |
-| **SOS Emergency** | Priority broadcast with geofencing | ✅ Complete |
-| **Offline Messaging** | Store-and-forward when offline | ✅ Complete |
-| **ATAK Integration** | CoT protocol + tactical plugin | ✅ Complete |
-| **Responsive UI** | Phones, tablets, all orientations | ✅ Complete |
-| **Localization** | English, German (Bundeswehr) | ✅ Complete |
+| **PTT Voice** | Half-duplex voice with 3GPP MCPTT floor control | Complete |
+| **Voice/Video Calls** | WebRTC with mid-call video renegotiation | Complete |
+| **Core-Telecom** | Android OS call registration, CallStyle notifications | Complete |
+| **E2E Encryption** | libsodium + MLS group encryption | Complete |
+| **Tactical Dashboard** | DEFCON readiness, radar, military UI | Complete |
+| **Blue Force Tracking** | Real-time GPS location sharing | Complete |
+| **SOS Emergency** | Priority broadcast with geofencing | Complete |
+| **ATAK Integration** | CoT protocol + tactical plugin (3-class arch) | Complete |
+| **Responsive UI** | Phones, tablets, all orientations | Complete |
+| **Localization** | English, German (Bundeswehr) | Complete |
 
-### 3GPP MCPTT Compliance (January 2026)
+### Android Telecom Integration
+
+The app follows [developer.android.com telecom guidelines](https://developer.android.com/develop/connectivity/telecom):
+
+- **Core-Telecom Jetpack** (`androidx.core:core-telecom:1.0.0`) - Registers VoIP calls with Android OS via `CallsManager.addCall()`
+- **CallStyle Notifications** - `forIncomingCall()` with full-screen intent, `forOngoingCall()` with hangup action
+- **Two Notification Channels** - Incoming (IMPORTANCE_HIGH + ringtone) and Ongoing (IMPORTANCE_DEFAULT, silent)
+- **Audio Endpoint Routing** - Speaker/earpiece/bluetooth via `CallControlScope.requestEndpointChange()`
+- **Foreground Service** - `phoneCall` type with `MANAGE_OWN_CALLS` permission
+
+### 3GPP MCPTT Compliance
 
 | Standard | Description | Status |
 |----------|-------------|--------|
-| TS 24.379 | MCPTT Call Control | ✅ Implemented |
-| TS 24.380 | Floor Control Protocol | ✅ Implemented |
-| TS 24.381 | Group Management | ✅ Implemented |
-| TS 24.382 | Identity Management | 🔄 Partial |
+| TS 24.379 | MCPTT Call Control | Implemented |
+| TS 24.380 | Floor Control Protocol | Implemented |
+| TS 24.381 | Group Management | Implemented |
+| TS 24.382 | Identity Management | Partial |
 
 **Floor Control State Machine:**
 ```
-IDLE → PENDING → GRANTED → RELEASING → IDLE
-         ↓
-       DENIED → QUEUED
+IDLE -> PENDING -> GRANTED -> RELEASING -> IDLE
+          |
+        DENIED -> QUEUED
 ```
 
 **Priority Levels:**
@@ -128,23 +148,6 @@ IDLE → PENDING → GRANTED → RELEASING → IDLE
 | HIGH | 3 | Mission-critical ops |
 | NORMAL | 2 | Standard communication |
 | LOW | 1 | Background traffic |
-
-### Audio Pipeline
-
-```
-TX: Microphone → VAD → Opus Encoder → RTP Packetizer → Multicast UDP
-    (16kHz)      (20ms)  (6-24kbps)    (RFC 3550)      (239.255.0.x:5004)
-
-RX: Multicast UDP → RTP Depacketizer → Jitter Buffer → Opus Decoder → Speaker
-                     (RFC 3550)         (20-100ms)      (16kHz)
-```
-
-**Specifications:**
-- Sample Rate: 16 kHz (narrowband voice)
-- Frame Size: 20ms (320 samples)
-- Opus Bitrate: 6-24 kbps (adaptive)
-- Jitter Buffer: 20-100ms (adaptive, RFC 3550)
-- QoS: DSCP EF (46) for expedited forwarding
 
 ### Security
 
@@ -158,60 +161,9 @@ RX: Multicast UDP → RTP Depacketizer → Jitter Buffer → Opus Decoder → Sp
 
 ---
 
-## Screenshots
-
-### Tactical Dashboard
-- DEFCON-style readiness indicators (ALPHA/BRAVO/CHARLIE/DELTA)
-- Real-time radar with sweep animation
-- Mission status panel with metrics
-- Radio telemetry (RSSI, SNR, Link Quality)
-- Starlink-inspired dark theme
-
-### PTT Channels
-- Channel list with voice activity indicators
-- Hold-to-talk with visual feedback
-- Priority preemption support
-- Emergency broadcast mode
-
-### Blue Force Tracking
-- Real-time GPS position sharing
-- Team member locations on map
-- CoT integration for ATAK interop
-- Geofencing alerts
-
----
-
 ## Architecture
 
 ### Clean Architecture + MVVM
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ANDROID DEVICE                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                     MR Wave Application                              │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐   │    │
-│  │  │ Presentation │  │    Core      │  │         Data             │   │    │
-│  │  │              │  │              │  │                          │   │    │
-│  │  │ • Screens    │  │ • PTT        │  │ • Settings DataStore    │   │    │
-│  │  │ • ViewModels │←→│ • Audio      │←→│ • Contact JSON          │   │    │
-│  │  │ • Navigation │  │ • Crypto     │  │ • Room DB (future)      │   │    │
-│  │  │ • Theme      │  │ • Network    │  │                          │   │    │
-│  │  │              │  │ • Floor Ctrl │  │                          │   │    │
-│  │  └──────────────┘  └──────┬───────┘  └──────────────────────────┘   │    │
-│  └───────────────────────────┼──────────────────────────────────────────┘    │
-│                              │                                               │
-│                              │ UDP Multicast (239.255.0.x:5004)             │
-│                              ↓                                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                         MESHRIDER RADIO                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │  BATMAN-adv Mesh  │  MN-MIMO Waveform  │  JSON-RPC API (UBUS)        │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Module Structure
 
 ```
 app/src/main/kotlin/com/doodlelabs/meshriderwave/
@@ -227,41 +179,53 @@ app/src/main/kotlin/com/doodlelabs/meshriderwave/
 │   │   ├── FloorControlManager.kt    # 3GPP MCPTT
 │   │   ├── FloorControlProtocol.kt
 │   │   └── FloorArbitrator.kt
+│   ├── telecom/                  # Android Telecom integration
+│   │   ├── TelecomCallManager.kt     # CallsManager wrapper
+│   │   └── CallNotificationManager.kt  # CallStyle notifications
 │   ├── sos/                      # Emergency system
+│   ├── webrtc/                   # RTCCall (mid-call renegotiation)
 │   └── transport/                # Multicast RTP transport
-│       ├── PTTTransport.kt           # SOLID interfaces
-│       └── MulticastPTTTransport.kt
 ├── data/                         # Repository implementations
 ├── domain/                       # Models, interfaces
 └── presentation/
     ├── ui/
     │   ├── screens/
-    │   │   ├── dashboard/
-    │   │   │   └── TacticalDashboardScreen.kt  # Military UI
+    │   │   ├── dashboard/        # TacticalDashboardScreen
+    │   │   ├── call/             # CallActivity (telecom-integrated)
     │   │   ├── channels/
     │   │   ├── contacts/
     │   │   ├── groups/
     │   │   ├── map/
-    │   │   └── settings/
+    │   │   └── settings/         # Calls, Audio/Video, Notifications
     │   ├── components/           # Premium glassmorphism
     │   └── theme/                # Starlink-inspired theme
     └── viewmodel/
 ```
 
-### ATAK Plugin Module
+---
+
+## ATAK Plugin
+
+The ATAK plugin follows the official [CivTAK plugin architecture](https://toyon.github.io/LearnATAK) with the required 3-class pattern:
 
 ```
-atak-plugin/src/main/java/com/doodlelabs/meshriderwave/atak/
-├── MRWavePlugin.kt
-├── map/
-│   └── TeamMarkerManager.kt      # CoT Blue Force Tracking
-├── ui/
-│   ├── TacticalOverlayWidget.kt  # Status overlay
-│   └── MilitaryPTTButton.kt      # 80dp tactile button
-└── receivers/
-    ├── CoTReceiver.kt
-    └── PTTToolbarReceiver.kt
+PluginLifecycle (MRWavePlugin)
+    └── MapComponent (MRWaveMapComponent)
+            ├── DropDownReceiver (PTTToolbarReceiver)
+            ├── DropDownReceiver (ChannelDropdownReceiver)
+            ├── DropDownReceiver (CoTReceiver)
+            └── DropDownReceiver (MRWaveResponseReceiver)
 ```
+
+See [atak-plugin/README.md](atak-plugin/README.md) for full plugin documentation.
+
+### Key ATAK Integration Points
+
+- **CoT Dispatching** - Team positions placed on ATAK map via `CotMapComponent.getInternalDispatcher().dispatch()`
+- **Network Sharing** - CoT shared with other ATAK clients via `getExternalDispatcher()`
+- **Blue Force Tracking** - MR Wave peer positions as friendly ground unit markers (`a-f-G-U-C`)
+- **PTT from ATAK** - Toolbar button triggers PTT via intent bridge to MR Wave app
+- **Channel Selection** - ATAK dropdown panel for switching PTT channels
 
 ---
 
@@ -302,8 +266,8 @@ Identity:      239.255.77.1:7777
 
 | Language | Code | Strings | Status |
 |----------|------|---------|--------|
-| English | `en` | 291 | ✅ Complete |
-| German | `de` | 291 | ✅ Complete |
+| English | `en` | 291 | Complete |
+| German | `de` | 291 | Complete |
 
 ### Adding New Language
 
@@ -312,14 +276,20 @@ Identity:      239.255.77.1:7777
 3. Translate all strings
 4. Test with device language change
 
-### German Military Terminology
+---
 
-| English | German | Standard |
-|---------|--------|----------|
-| Mission Status | EINSATZSTATUS | Bundeswehr |
-| COMMS | KOMM | NATO |
-| Operational | EINSATZBEREIT | Bundeswehr |
-| Emergency | NOTFALL | DIN |
+## Dependencies
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| Kotlin | 2.1.0 | Language |
+| Compose BOM | 2024.12.01 | UI Framework |
+| Hilt | 2.53.1 | Dependency Injection |
+| Navigation | 2.8.5 | Compose Navigation |
+| WebRTC | 119.0.0 | Voice/Video |
+| libsodium | 2.0.2 | Cryptography |
+| Core-Telecom | 1.0.0 | Android Telecom |
+| DataStore | 1.1.1 | Preferences |
 
 ---
 
@@ -335,24 +305,9 @@ Identity:      239.255.77.1:7777
 # Lint check
 ./gradlew lint
 
-# Build check
+# Build check (app + plugin)
 ./gradlew assembleDebug
 ```
-
----
-
-## Dependencies
-
-| Library | Version | Purpose |
-|---------|---------|---------|
-| Kotlin | 2.1.0 | Language |
-| Compose BOM | 2024.12.01 | UI Framework |
-| Hilt | 2.53.1 | Dependency Injection |
-| Navigation | 2.8.5 | Compose Navigation |
-| WebRTC | 119.0.0 | Voice/Video |
-| libsodium | 2.0.2 | Cryptography |
-| DataStore | 1.1.1 | Preferences |
-| WindowSizeClass | Material3 | Responsive |
 
 ---
 
@@ -364,12 +319,14 @@ Identity:      239.255.77.1:7777
 | No audio on TX | Check microphone permission |
 | No audio on RX | Check multicast group joined |
 | Samsung tablet crash | Update to v2.5.0 (fixed) |
-| Video one-way | Update to v2.5.0 (fixed) |
+| Video one-way | Update to v2.5.1 (fixed with renegotiation) |
+| Call notification missing | Check notification permissions (API 33+) |
 
 ### Debug Logging
 
 ```bash
-adb logcat -s MeshRider:*
+adb logcat -s MeshRider:*    # Main app logs
+adb logcat -s MRWave:*       # ATAK plugin logs
 ```
 
 ---
@@ -380,6 +337,7 @@ adb logcat -s MeshRider:*
 |----------|-------------|
 | [README.md](README.md) | Quick start and overview |
 | [CLAUDE.md](CLAUDE.md) | Technical reference for AI |
+| [atak-plugin/README.md](atak-plugin/README.md) | ATAK plugin documentation |
 | [HANDOFF.md](HANDOFF.md) | Project handoff docs |
 | [docs/PTT_GUIDE.md](docs/PTT_GUIDE.md) | PTT system guide |
 
@@ -409,10 +367,10 @@ prohibited without express written permission from DoodleLabs.
 
 <div align="center">
 
-**MeshRider Wave** — Tactical Voice for the Modern Battlefield
+**MeshRider Wave** -- Tactical Voice for the Modern Battlefield
 
 *Built with precision. Deployed with confidence.*
 
-*Last Updated: January 25, 2026*
+*Last Updated: February 1, 2026*
 
 </div>

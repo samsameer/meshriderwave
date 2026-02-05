@@ -336,6 +336,55 @@
     <string name="permission_location">Standortzugriff für Lagedarstellung erforderlich</string>
     <string name="permission_notifications">Benachrichtigungszugriff für eingehende Anrufe erforderlich</string>
 
+    <!-- Settings: Calls (Core-Telecom) -->
+    <string name="settings_section_calls">Anrufe</string>
+    <string name="settings_vibrate_on_call">Bei eingehendem Anruf vibrieren</string>
+    <string name="settings_vibrate_on_call_desc">Vibration bei Anrufeingang</string>
+    <string name="settings_auto_accept">Anrufe automatisch annehmen</string>
+    <string name="settings_auto_accept_desc">Automatisch von vertrauenswürdigen Kontakten annehmen</string>
+    <string name="settings_telecom_integration">Telecom-Integration</string>
+    <string name="settings_telecom_integration_value">Core-Telecom (CallsManager)</string>
+    <string name="settings_audio_routing_telecom">Audio-Weiterleitung</string>
+    <string name="settings_audio_routing_telecom_value">Hörer / Lautsprecher / Bluetooth</string>
+    <string name="settings_bluetooth_audio">Bluetooth-Audio</string>
+    <string name="settings_bluetooth_audio_value">Unterstützt über Telecom-Endpunkte</string>
+    <string name="settings_incoming_notification">Eingehende Anrufbenachrichtigung</string>
+    <string name="settings_incoming_notification_value">CallStyle (Vollbild-Intent)</string>
+    <string name="settings_ongoing_notification">Laufende Anrufbenachrichtigung</string>
+    <string name="settings_ongoing_notification_value">Permanent (Nicht abweisbar)</string>
+
+    <!-- Settings: PTT Advanced -->
+    <string name="settings_ptt_transport">PTT-Transport</string>
+    <string name="settings_ptt_transport_value">Multicast RTP (RFC 3550)</string>
+    <string name="settings_ptt_codec">PTT-Codec</string>
+    <string name="settings_ptt_codec_value">Opus 6–24 kbit/s (RFC 7587)</string>
+    <string name="settings_ptt_qos">QoS-Markierung</string>
+    <string name="settings_ptt_qos_value">DSCP EF (46) – Beschleunigte Weiterleitung</string>
+    <string name="settings_ptt_jitter_buffer">Jitter-Puffer</string>
+    <string name="settings_ptt_jitter_buffer_value">Adaptiv 20–100ms (RFC 3550)</string>
+    <string name="settings_ptt_floor_control">Sprachsteuerung</string>
+    <string name="settings_ptt_floor_control_value">3GPP MCPTT (TS 24.380)</string>
+    <string name="settings_ptt_multicast_group">Multicast-Gruppe</string>
+    <string name="settings_ptt_multicast_group_value">239.255.0.x:5004</string>
+    <string name="settings_ptt_m2e_latency">Mund-zu-Ohr-Latenz</string>
+    <string name="settings_ptt_m2e_latency_value">&lt; 300ms Zielwert</string>
+
+    <!-- ATAK Plugin -->
+    <string name="atak_plugin_name">MeshRider Wave ATAK-Plugin</string>
+    <string name="atak_cot_dispatching">CoT-Übermittlung</string>
+    <string name="atak_cot_dispatching_value">CotMapComponent (Intern + Extern)</string>
+    <string name="atak_bft_markers">BFT-Markierungen</string>
+    <string name="atak_bft_markers_value">Echtzeit-Teampositionen auf ATAK-Karte</string>
+
+    <!-- Floor Control States -->
+    <string name="floor_idle">Bereit</string>
+    <string name="floor_requesting">Sprecherlaubnis wird angefordert…</string>
+    <string name="floor_granted">Sprecherlaubnis erteilt – Sprechen Sie jetzt</string>
+    <string name="floor_denied">Sprecherlaubnis verweigert</string>
+    <string name="floor_queued">In Warteschlange – Warten auf Sprecherlaubnis</string>
+    <string name="floor_preempted">Unterbrochen durch höhere Priorität</string>
+    <string name="floor_releasing">Sprecherlaubnis wird freigegeben…</string>
+
     <!-- Content Descriptions (Accessibility) -->
     <string name="cd_back">Zurück navigieren</string>
     <string name="cd_settings">Einstellungen öffnen</string>

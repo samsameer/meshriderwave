@@ -170,12 +170,12 @@ class PTTManager @Inject constructor(
      * Initialize the PTT system with specified transport mode
      *
      * @param mode Transport mode (MULTICAST recommended for production)
-     * @param codecBitrate Opus bitrate in bps (6000-24000, default 12000)
+     * @param codecBitrate Opus bitrate in bps (6000-24000, default 24000)
      * @param networkInterface Network interface for multicast (e.g., "wlan0")
      */
     fun initialize(
         mode: TransportMode = TransportMode.MULTICAST,
-        codecBitrate: Int = 12000,
+        codecBitrate: Int = 24000,  // Feb 2026: 24kbps for clear voice (was 12kbps = robotic/scary)
         networkInterface: String? = null
     ): Boolean {
         transportMode = mode
@@ -287,8 +287,9 @@ class PTTManager @Inject constructor(
      */
     suspend fun joinChannel(invite: PTTChannelInvite): Result<PTTChannel> {
         return try {
-            // Request channel info from network
-            // For now, create placeholder
+            // Create channel from invite data with self as first member.
+            // Additional members are discovered via channel beacon announcements
+            // on multicast group 239.255.0.{channelId[0]}:5005
             val channel = PTTChannel(
                 channelId = invite.channelId,
                 name = invite.name,
@@ -349,6 +350,16 @@ class PTTManager @Inject constructor(
             if (!transmitStates.containsKey(ch.shortId)) {
                 initTransmitState(ch)
                 logI("setActiveChannel: Initialized transmit state for ${ch.name}")
+            }
+
+            // Feb 2026 CRITICAL FIX: Join multicast talkgroup immediately so we can RECEIVE
+            // Previously, joinTalkgroup was only called in startAudioCapture (on PTT press),
+            // meaning the device couldn't receive audio until it transmitted first.
+            if (transportMode == TransportMode.MULTICAST) {
+                val talkgroupId = (ch.channelId.contentHashCode() and 0xFF).coerceIn(1, 255)
+                if (multicastAudioManager.joinTalkgroup(talkgroupId)) {
+                    logI("setActiveChannel: Joined multicast talkgroup $talkgroupId for receiving")
+                }
             }
         }
 
@@ -439,8 +450,9 @@ class PTTManager @Inject constructor(
                         logI("Floor QUEUED - may need to yield")
                     }
                     is FloorControlManager.FloorRequestResult.Denied -> {
-                        logW("Floor DENIED: ${result.reason} - should stop transmission")
-                        // In a full implementation, we'd stop transmission here
+                        logW("Floor DENIED: ${result.reason} - stopping transmission")
+                        // Feb 2026 FIX (Bug 12): Actually stop transmission when floor is denied
+                        stopTransmission(channel)
                     }
                     is FloorControlManager.FloorRequestResult.Error -> {
                         logE("Floor request ERROR: ${result.message}")
@@ -485,6 +497,21 @@ class PTTManager @Inject constructor(
             floorControlManager.releaseFloor(channel.channelId)
         } catch (e: Exception) {
             logW("Floor release error (transmission already stopped): ${e.message}")
+        }
+    }
+
+    /**
+     * Feb 2026: Force stop ALL audio transmission regardless of state.
+     * Called when stopTransmit has no active channel or errors out.
+     */
+    fun forceStopAllTransmission() {
+        logW("forceStopAllTransmission: Killing all audio")
+        multicastAudioManager.stopTransmit()
+        // Reset all transmit states to IDLE
+        transmitStates.forEach { (key, stateFlow) ->
+            if (stateFlow.value.status == PTTTransmitState.Status.TRANSMITTING) {
+                stateFlow.value = stateFlow.value.copy(status = PTTTransmitState.Status.IDLE)
+            }
         }
     }
 
@@ -739,7 +766,7 @@ class PTTManager @Inject constructor(
 
         try {
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC,  // Feb 2026 FIX: MIC not VOICE_COMMUNICATION (Samsung DSP = scary voice)
                 SAMPLE_RATE,
                 CHANNEL_CONFIG_IN,
                 AUDIO_FORMAT,
@@ -905,7 +932,7 @@ class PTTManager @Inject constructor(
                 audioTrack = AudioTrack.Builder()
                     .setAudioAttributes(
                         AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)  // Feb 2026 FIX: speaker output
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )

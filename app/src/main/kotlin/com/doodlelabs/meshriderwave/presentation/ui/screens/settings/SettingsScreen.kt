@@ -188,6 +188,53 @@ fun SettingsScreen(
                     }
                 }
 
+                // Calls Section (Core-Telecom integrated)
+                item {
+                    SettingsSection(title = "Calls") {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            PremiumSettingsToggle(
+                                icon = Icons.Outlined.Vibration,
+                                iconColor = PremiumColors.ElectricCyan,
+                                title = "Vibrate on Incoming Call",
+                                subtitle = "Haptic feedback for incoming calls",
+                                checked = uiState.vibrateOnCall,
+                                onCheckedChange = { viewModel.setVibrateOnCall(it) }
+                            )
+                            PremiumSettingsToggle(
+                                icon = Icons.Outlined.PhoneForwarded,
+                                iconColor = PremiumColors.AuroraGreen,
+                                title = "Auto-Accept Calls",
+                                subtitle = "Answer incoming calls automatically",
+                                checked = uiState.autoAcceptCalls,
+                                onCheckedChange = { viewModel.setAutoAcceptCalls(it) }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.PhoneInTalk,
+                                iconColor = PremiumColors.SolarGold,
+                                title = "Telecom Integration",
+                                subtitle = "Core-Telecom (CallStyle notifications)",
+                                badge = "Active",
+                                badgeColor = PremiumColors.AuroraGreen,
+                                onClick = { }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.SettingsVoice,
+                                iconColor = PremiumColors.HoloPurple,
+                                title = "Audio Routing",
+                                subtitle = "Managed by Android Telecom framework",
+                                onClick = { }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.Bluetooth,
+                                iconColor = PremiumColors.ElectricCyan,
+                                title = "Bluetooth Audio",
+                                subtitle = "Auto-route to connected headset",
+                                onClick = { }
+                            )
+                        }
+                    }
+                }
+
                 // Location & Tracking Section
                 item {
                     SettingsSection(title = "Blue Force Tracking") {
@@ -369,7 +416,7 @@ fun SettingsScreen(
                                 icon = Icons.Outlined.GraphicEq,
                                 iconColor = PremiumColors.ElectricCyan,
                                 title = "Hardware Echo Cancellation",
-                                subtitle = "Use device AEC",
+                                subtitle = "Use device AEC/NS for clear audio",
                                 checked = uiState.hardwareAEC,
                                 onCheckedChange = { viewModel.setHardwareAEC(it) }
                             )
@@ -377,7 +424,7 @@ fun SettingsScreen(
                                 icon = Icons.Outlined.Videocam,
                                 iconColor = PremiumColors.SolarGold,
                                 title = "Hardware Video Encoding",
-                                subtitle = "Use device encoder",
+                                subtitle = "H.264 High Profile acceleration",
                                 checked = uiState.videoHwAccel,
                                 onCheckedChange = { viewModel.setVideoHwAccel(it) }
                             )
@@ -385,14 +432,23 @@ fun SettingsScreen(
                                 icon = Icons.Outlined.HighQuality,
                                 iconColor = PremiumColors.HoloPurple,
                                 title = "Video Quality",
-                                subtitle = "720p @ 25fps",
+                                subtitle = "Adaptive: 180p-1080p (auto based on network)",
+                                badge = "Auto",
+                                badgeColor = PremiumColors.ElectricCyan,
                                 onClick = { }
                             )
                             PremiumSettingsItem(
-                                icon = Icons.Outlined.SettingsVoice,
+                                icon = Icons.Outlined.CameraFront,
                                 iconColor = PremiumColors.LaserLime,
-                                title = "Audio Routing",
-                                subtitle = "Auto (Earpiece/Speaker)",
+                                title = "Default Camera",
+                                subtitle = "Front camera",
+                                onClick = { }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.Speed,
+                                iconColor = PremiumColors.ElectricCyan,
+                                title = "WebRTC Engine",
+                                subtitle = "libwebrtc 119.0.0 (Unified Plan)",
                                 onClick = { }
                             )
                         }
@@ -407,15 +463,44 @@ fun SettingsScreen(
                                 icon = Icons.Outlined.Notifications,
                                 iconColor = PremiumColors.ElectricCyan,
                                 title = "Push Notifications",
-                                subtitle = "Calls, messages, SOS",
+                                subtitle = "Calls, messages, SOS alerts",
                                 checked = uiState.notificationsEnabled,
                                 onCheckedChange = { viewModel.setNotificationsEnabled(it) }
                             )
                             PremiumSettingsItem(
-                                icon = Icons.Outlined.VolumeUp,
+                                icon = Icons.Outlined.RingVolume,
+                                iconColor = PremiumColors.AuroraGreen,
+                                title = "Incoming Calls",
+                                subtitle = "High priority with ringtone + vibration",
+                                badge = "CallStyle",
+                                badgeColor = PremiumColors.AuroraGreen,
+                                onClick = {
+                                    // Open system notification channel settings
+                                    val intent = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                        putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, "mesh_rider_calls_incoming")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.PhoneInTalk,
                                 iconColor = PremiumColors.SolarGold,
+                                title = "Ongoing Calls",
+                                subtitle = "Silent persistent notification",
+                                onClick = {
+                                    val intent = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                        putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, "mesh_rider_calls_ongoing")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            )
+                            PremiumSettingsItem(
+                                icon = Icons.Outlined.MusicNote,
+                                iconColor = PremiumColors.HoloPurple,
                                 title = "Ringtone",
-                                subtitle = "Tactical Alert",
+                                subtitle = "System default ringtone",
                                 onClick = { }
                             )
                         }

@@ -2,11 +2,11 @@
  * Mesh Rider Wave - PTT Channels Screen
  * Copyright (C) 2024-2026 Jabbir Basha P. All Rights Reserved.
  *
- * Push-to-Talk / Walkie-Talkie channel management
- * - Create/join PTT channels
- * - One-touch PTT transmission
- * - Priority-based audio mixing
- * - VOX (voice-activated) mode
+ * Feb 2026: Complete UI rewrite following Zello/Motorola WAVE PTT patterns:
+ * - Channel list view: tap channel to open talk screen
+ * - Talk screen: full-screen with large circular PTT button (Zello-style)
+ * - Clean flow: Create → Discover → Join → Talk → Leave/Delete
+ * - Proper state feedback: floor state, speaker name, audio level
  */
 
 package com.doodlelabs.meshriderwave.presentation.ui.screens.channels
@@ -23,28 +23,29 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.doodlelabs.meshriderwave.R
 import com.doodlelabs.meshriderwave.presentation.ui.components.*
 import com.doodlelabs.meshriderwave.presentation.ui.theme.PremiumColors
 import com.doodlelabs.meshriderwave.presentation.viewmodel.ChannelsViewModel
@@ -59,207 +60,120 @@ fun ChannelsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
-    var isRefreshing by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    // Auto-refresh discovered channels periodically
+    // Auto-refresh
     LaunchedEffect(Unit) {
         while (true) {
-            delay(5000)  // Refresh UI every 5 seconds
+            delay(5000)
             viewModel.refreshChannels()
         }
     }
 
-    // Refresh animation
-    val refreshRotation by rememberInfiniteTransition(label = "refresh").animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing)
-        ),
-        label = "rotation"
-    )
+    // Show errors
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            snackbarHostState.showSnackbar(error, duration = SnackbarDuration.Short)
+            viewModel.clearError()
+        }
+    }
 
     DeepSpaceBackground {
         Scaffold(
             containerColor = Color.Transparent,
+            snackbarHost = {
+                SnackbarHost(snackbarHostState) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = PremiumColors.SpaceGrayLight,
+                        contentColor = PremiumColors.TextPrimary,
+                        actionColor = PremiumColors.ElectricCyan,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(
-                                text = "PTT Channels",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = PremiumColors.TextPrimary
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "Push-to-Talk Communication",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = PremiumColors.TextSecondary
-                                )
-                                // Show discovered count
-                                if (uiState.discoveredChannels.isNotEmpty()) {
-                                    Text(
-                                        text = "• ${uiState.discoveredChannels.size} nearby",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = PremiumColors.ElectricCyan
-                                    )
-                                }
-                            }
-                        }
+                        Text(
+                            text = if (uiState.activeChannel != null) uiState.activeChannel!!.name
+                                   else stringResource(R.string.channels_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = PremiumColors.TextPrimary
+                        )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(onClick = {
+                            if (uiState.activeChannel != null) {
+                                // Back from talk screen to channel list
+                                viewModel.setActiveChannel("")
+                            } else {
+                                onNavigateBack()
+                            }
+                        }) {
                             Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Back",
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back),
                                 tint = PremiumColors.TextPrimary
                             )
                         }
                     },
                     actions = {
-                        // Refresh button
-                        IconButton(
-                            onClick = {
+                        if (uiState.activeChannel == null) {
+                            // Channel list: show create button
+                            IconButton(onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                scope.launch {
-                                    isRefreshing = true
-                                    viewModel.refreshChannels()
-                                    delay(1000)
-                                    isRefreshing = false
-                                }
+                                showCreateDialog = true
+                            }) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "Create Channel",
+                                    tint = PremiumColors.ElectricCyan
+                                )
                             }
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh",
-                                tint = PremiumColors.TextSecondary,
-                                modifier = if (isRefreshing) Modifier.rotate(refreshRotation) else Modifier
-                            )
-                        }
-                        // Create button
-                        IconButton(onClick = { showCreateDialog = true }) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "Create Channel",
-                                tint = PremiumColors.ElectricCyan
-                            )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent
-                    )
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
             }
         ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                // Active channel with PTT button
-                uiState.activeChannel?.let { channel ->
-                    ActiveChannelCard(
-                        channel = channel,
-                        isTransmitting = uiState.isTransmitting,
-                        onPTTPress = { viewModel.startTransmit() },
-                        onPTTRelease = { viewModel.stopTransmit() },
-                        onLeave = { viewModel.leaveChannel(channel.id) },
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-
-                // Channel list - Scrollable with proper sections
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Show empty state only if no channels at all
-                    if (uiState.channels.isEmpty() && uiState.discoveredChannels.isEmpty()) {
-                        item {
-                            EmptyChannelsState(
-                                onCreateClick = { showCreateDialog = true }
-                            )
-                        }
-                    }
-
-                    // My Channels Section
-                    if (uiState.channels.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "MY CHANNELS",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PremiumColors.TextSecondary,
-                                letterSpacing = 1.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
-
-                        items(
-                            items = uiState.channels,
-                            key = { "my_${it.id}" }
-                        ) { channel ->
-                            ChannelCard(
-                                channel = channel,
-                                isJoined = uiState.joinedChannelIds.contains(channel.id),
-                                isActive = uiState.activeChannel?.id == channel.id,
-                                onJoin = { viewModel.joinChannel(channel.id) },
-                                onLeave = { viewModel.leaveChannel(channel.id) },
-                                onSetActive = { viewModel.setActiveChannel(channel.id) },
-                                onDelete = { viewModel.deleteChannel(channel.id) }
-                            )
-                        }
-                    }
-
-                    // Discovered Channels Section (from other devices)
-                    if (uiState.discoveredChannels.isNotEmpty()) {
-                        item {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "DISCOVERED CHANNELS",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PremiumColors.ElectricCyan,
-                                letterSpacing = 1.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                            Text(
-                                text = "Channels shared by nearby devices",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = PremiumColors.TextSecondary,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                        }
-
-                        items(
-                            items = uiState.discoveredChannels,
-                            key = { "disc_${it.id}" }
-                        ) { channel ->
-                            DiscoveredChannelCard(
-                                channel = channel,
-                                onJoin = { viewModel.joinDiscoveredChannel(channel.id) }
-                            )
-                        }
-                    }
-
-                    // Bottom spacing
-                    item {
-                        Spacer(modifier = Modifier.height(100.dp))
-                    }
-                }
+            // Two views: Channel List OR Talk Screen
+            if (uiState.activeChannel != null) {
+                // ===== TALK SCREEN (Zello-style) =====
+                TalkScreen(
+                    channel = uiState.activeChannel!!,
+                    isTransmitting = uiState.isTransmitting,
+                    floorState = uiState.floorState,
+                    activeSpeaker = uiState.activeSpeaker,
+                    onPTTPress = { viewModel.startTransmit() },
+                    onPTTRelease = { viewModel.stopTransmit() },
+                    onLeave = {
+                        viewModel.leaveChannel(uiState.activeChannel!!.id)
+                    },
+                    modifier = Modifier.padding(padding)
+                )
+            } else {
+                // ===== CHANNEL LIST =====
+                ChannelListView(
+                    channels = uiState.channels,
+                    discoveredChannels = uiState.discoveredChannels,
+                    joinedChannelIds = uiState.joinedChannelIds,
+                    onChannelTap = { viewModel.setActiveChannel(it.id) },
+                    onJoinChannel = { viewModel.joinChannel(it.id) },
+                    onJoinDiscovered = { viewModel.joinDiscoveredChannel(it.id) },
+                    onLeaveChannel = { viewModel.leaveChannel(it.id) },
+                    onDeleteChannel = { viewModel.deleteChannel(it.id) },
+                    onCreateClick = { showCreateDialog = true },
+                    modifier = Modifier.padding(padding)
+                )
             }
         }
     }
 
-    // Create Channel Dialog (Premium)
+    // Create Channel Dialog
     if (showCreateDialog) {
         PremiumCreateChannelDialog(
             onDismiss = { showCreateDialog = false },
@@ -271,13 +185,16 @@ fun ChannelsScreen(
     }
 }
 
-/**
- * Active channel card with large PTT button
- */
+// =============================================================================
+// TALK SCREEN — Full screen Zello-style PTT view
+// =============================================================================
+
 @Composable
-private fun ActiveChannelCard(
+private fun TalkScreen(
     channel: ChannelUiModel,
     isTransmitting: Boolean,
+    floorState: String,
+    activeSpeaker: String?,
     onPTTPress: () -> Unit,
     onPTTRelease: () -> Unit,
     onLeave: () -> Unit,
@@ -287,120 +204,105 @@ private fun ActiveChannelCard(
     var isPressing by remember { mutableStateOf(false) }
 
     val buttonScale by animateFloatAsState(
-        targetValue = if (isPressing) 0.95f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        targetValue = if (isPressing) 0.92f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "pttScale"
     )
 
-    val pttColor by animateColorAsState(
-        targetValue = if (isTransmitting) PremiumColors.LaserLime else PremiumColors.NeonMagenta,
-        animationSpec = tween(200),
-        label = "pttColor"
-    )
+    // Pulsing ring when transmitting
+    val pulseScale by if (isTransmitting) {
+        rememberInfiniteTransition(label = "pulse").animateFloat(
+            initialValue = 1f, targetValue = 1.3f,
+            animationSpec = infiniteRepeatable(
+                tween(800, easing = FastOutSlowInEasing), RepeatMode.Reverse
+            ), label = "ring"
+        )
+    } else {
+        remember { mutableFloatStateOf(1f) }
+    }
 
-    GradientGlassCard(
-        modifier = modifier.fillMaxWidth(),
-        cornerRadius = 24.dp
+    val pttColor = when {
+        isTransmitting -> PremiumColors.BusyRed
+        isPressing -> PremiumColors.ConnectingAmber
+        else -> PremiumColors.ElectricCyan
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Channel info
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Channel header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(PremiumColors.ElectricCyan, PremiumColors.HoloPurple)
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.RecordVoiceOver,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = PremiumColors.TextPrimary
-                        )
-                    }
+            Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = PremiumColors.LaserLime)
+            Text("E2E Encrypted", style = MaterialTheme.typography.labelMedium,
+                color = PremiumColors.LaserLime, fontWeight = FontWeight.SemiBold)
+        }
 
-                    Column {
-                        Text(
-                            text = channel.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = PremiumColors.TextPrimary
-                        )
-                        Text(
-                            text = "${channel.onlineCount} online",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = PremiumColors.TextSecondary
-                        )
-                    }
-                }
+        Spacer(modifier = Modifier.height(8.dp))
 
-                IconButton(
-                    onClick = onLeave,
+        Text(
+            "${channel.onlineCount} members online",
+            style = MaterialTheme.typography.bodyMedium,
+            color = PremiumColors.TextSecondary
+        )
+
+        // Active speaker
+        Spacer(modifier = Modifier.height(24.dp))
+        AnimatedVisibility(visible = activeSpeaker != null && !isTransmitting) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.VolumeUp, null, Modifier.size(24.dp),
+                    tint = PremiumColors.LaserLime)
+                Spacer(Modifier.height(4.dp))
+                Text(activeSpeaker ?: "", style = MaterialTheme.typography.titleMedium,
+                    color = PremiumColors.LaserLime, fontWeight = FontWeight.Bold)
+                Text("Speaking", style = MaterialTheme.typography.labelSmall,
+                    color = PremiumColors.TextSecondary)
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // ===== LARGE CIRCULAR PTT BUTTON (Zello-style) =====
+        Box(contentAlignment = Alignment.Center) {
+            // Pulsing ring behind button when transmitting
+            if (isTransmitting) {
+                Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(200.dp)
+                        .scale(pulseScale)
                         .clip(CircleShape)
-                        .background(PremiumColors.BusyRed.copy(alpha = 0.2f))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Leave",
-                        tint = PremiumColors.BusyRed,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                        .background(PremiumColors.BusyRed.copy(alpha = 0.15f))
+                )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Large PTT Button
+            // Main PTT circle
             Box(
                 modifier = Modifier
-                    .size(140.dp)
+                    .size(160.dp)
                     .scale(buttonScale)
                     .clip(CircleShape)
                     .background(
-                        brush = if (isTransmitting) {
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    pttColor,
-                                    pttColor.copy(alpha = 0.7f)
-                                )
-                            )
-                        } else {
-                            Brush.radialGradient(
-                                colors = listOf(
+                        brush = Brush.radialGradient(
+                            colors = if (isTransmitting) {
+                                listOf(PremiumColors.BusyRed, PremiumColors.BusyRed.copy(alpha = 0.7f))
+                            } else {
+                                listOf(
                                     PremiumColors.SpaceGrayLight,
                                     PremiumColors.SpaceGray
                                 )
-                            )
-                        }
+                            }
+                        )
                     )
                     .border(
-                        width = 4.dp,
-                        brush = Brush.linearGradient(
-                            colors = listOf(pttColor, pttColor.copy(alpha = 0.5f))
-                        ),
+                        width = 3.dp,
+                        color = pttColor,
                         shape = CircleShape
                     )
                     .pointerInput(Unit) {
@@ -414,500 +316,460 @@ private fun ActiveChannelCard(
                                 } finally {
                                     isPressing = false
                                     onPTTRelease()
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 }
                             }
                         )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = if (isTransmitting) Icons.Default.Mic else Icons.Default.MicNone,
-                        contentDescription = null,
+                        contentDescription = "Push to Talk",
                         modifier = Modifier.size(48.dp),
-                        tint = if (isTransmitting) PremiumColors.DeepSpace else pttColor
+                        tint = if (isTransmitting) Color.White else pttColor
                     )
-
-                    if (isTransmitting) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "TRANSMITTING",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = PremiumColors.DeepSpace,
-                            fontSize = 10.sp
-                        )
-                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (isTransmitting) "RELEASE" else "HOLD",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Black,
+                        color = if (isTransmitting) Color.White else pttColor,
+                        letterSpacing = 2.sp
+                    )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-            Text(
-                text = if (isTransmitting) "Release to stop" else "Hold to talk",
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (isTransmitting) PremiumColors.LaserLime else PremiumColors.TextSecondary
-            )
+        // Status text below PTT
+        Text(
+            text = when {
+                isTransmitting -> "Transmitting..."
+                isPressing -> "Connecting..."
+                else -> "Hold to talk"
+            },
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isTransmitting) PremiumColors.BusyRed else PremiumColors.TextSecondary
+        )
 
-            // Transmitting indicator animation
-            if (isTransmitting) {
-                Spacer(modifier = Modifier.height(16.dp))
+        // Waveform when transmitting
+        AnimatedVisibility(
+            visible = isTransmitting,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(8.dp))
                 TransmittingWaveform()
             }
         }
-    }
-}
 
-/**
- * Transmitting waveform animation
- */
-@Composable
-private fun TransmittingWaveform() {
-    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
+        Spacer(modifier = Modifier.weight(1f))
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        repeat(5) { index ->
-            val height by infiniteTransition.animateFloat(
-                initialValue = 8f,
-                targetValue = 24f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(
-                        durationMillis = 300,
-                        delayMillis = index * 50
-                    ),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "bar$index"
-            )
-
-            Box(
-                modifier = Modifier
-                    .width(6.dp)
-                    .height(height.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(PremiumColors.LaserLime)
-            )
-        }
-    }
-}
-
-/**
- * Channel card with delete support
- */
-@Composable
-private fun ChannelCard(
-    channel: ChannelUiModel,
-    isJoined: Boolean,
-    isActive: Boolean,
-    onJoin: () -> Unit,
-    onLeave: () -> Unit,
-    onSetActive: () -> Unit,
-    onDelete: (() -> Unit)? = null
-) {
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
-    val borderColor = when {
-        isActive -> PremiumColors.ElectricCyan
-        isJoined -> PremiumColors.LaserLime.copy(alpha = 0.5f)
-        else -> PremiumColors.GlassBorder
-    }
-
-    val priorityColor = when (channel.priority) {
-        "EMERGENCY" -> PremiumColors.BusyRed
-        "HIGH" -> PremiumColors.ConnectingAmber
-        "LOW" -> PremiumColors.TextSecondary
-        else -> PremiumColors.ElectricCyan
-    }
-
-    GlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = isJoined) { onSetActive() },
-        cornerRadius = 16.dp,
-        borderColor = borderColor
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Bottom: Leave button
+        TextButton(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLeave()
+            },
+            modifier = Modifier.padding(bottom = 32.dp)
         ) {
-            // Channel icon with priority indicator
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(priorityColor.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.RecordVoiceOver,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = priorityColor
-                    )
-                }
-
-                // Online indicator
-                if (channel.hasActivity) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(14.dp)
-                            .clip(CircleShape)
-                            .background(PremiumColors.LaserLime)
-                            .border(2.dp, PremiumColors.SpaceGray, CircleShape)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = channel.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PremiumColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (isActive) {
-                        PremiumChip(
-                            text = "Active",
-                            color = PremiumColors.ElectricCyan
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Member count
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.People,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = PremiumColors.TextSecondary
-                        )
-                        Text(
-                            text = "${channel.onlineCount} online",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = PremiumColors.TextSecondary
-                        )
-                    }
-
-                    // Priority badge
-                    PremiumChip(
-                        text = channel.priority,
-                        color = priorityColor,
-                        variant = ChipVariant.OUTLINED
-                    )
-                }
-            }
-
-            // Action buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Delete button (owner only, long press to confirm)
-                if (onDelete != null && isJoined) {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            showDeleteConfirm = true
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(PremiumColors.BusyRed.copy(alpha = 0.1f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = PremiumColors.BusyRed.copy(alpha = 0.7f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // Join/Leave button
-                if (isJoined) {
-                    IconButton(
-                        onClick = onLeave,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(PremiumColors.BusyRed.copy(alpha = 0.2f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ExitToApp,
-                            contentDescription = "Leave",
-                            tint = PremiumColors.BusyRed,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                } else {
-                    Button(
-                        onClick = onJoin,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PremiumColors.ElectricCyan
-                        ),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Text("Join", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
+            Icon(Icons.AutoMirrored.Outlined.ExitToApp, null,
+                Modifier.size(18.dp), tint = PremiumColors.BusyRed)
+            Spacer(Modifier.width(8.dp))
+            Text("Leave Channel", color = PremiumColors.BusyRed,
+                fontWeight = FontWeight.SemiBold)
         }
     }
+}
 
-    // Delete confirmation dialog
-    if (showDeleteConfirm && onDelete != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = {
-                Text(
-                    "Delete Channel",
-                    color = PremiumColors.TextPrimary,
-                    fontWeight = FontWeight.Bold
+// =============================================================================
+// CHANNEL LIST VIEW
+// =============================================================================
+
+@Composable
+private fun ChannelListView(
+    channels: List<ChannelUiModel>,
+    discoveredChannels: List<ChannelUiModel>,
+    joinedChannelIds: Set<String>,
+    onChannelTap: (ChannelUiModel) -> Unit,
+    onJoinChannel: (ChannelUiModel) -> Unit,
+    onJoinDiscovered: (ChannelUiModel) -> Unit,
+    onLeaveChannel: (ChannelUiModel) -> Unit,
+    onDeleteChannel: (ChannelUiModel) -> Unit,
+    onCreateClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (channels.isEmpty() && discoveredChannels.isEmpty()) {
+        EmptyChannelsState(onCreateClick = onCreateClick, modifier = modifier)
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        // MY CHANNELS
+        if (channels.isNotEmpty()) {
+            item(key = "header_my") {
+                SectionLabel("MY CHANNELS", channels.size)
+            }
+
+            items(items = channels, key = { "my_${it.id}" }) { channel ->
+                val isJoined = joinedChannelIds.contains(channel.id)
+                ChannelRow(
+                    channel = channel,
+                    isJoined = isJoined,
+                    isOwner = channel.isOwner,
+                    onTap = { if (isJoined) onChannelTap(channel) else onJoinChannel(channel) },
+                    onJoin = { onJoinChannel(channel) },
+                    onLeave = { onLeaveChannel(channel) },
+                    onDelete = { onDeleteChannel(channel) }
                 )
-            },
-            text = {
-                Text(
-                    "Are you sure you want to delete \"${channel.name}\"? This action cannot be undone.",
-                    color = PremiumColors.TextSecondary
+            }
+        }
+
+        // DISCOVERED
+        if (discoveredChannels.isNotEmpty()) {
+            item(key = "header_disc") {
+                Spacer(Modifier.height(16.dp))
+                SectionLabel("NEARBY", discoveredChannels.size, PremiumColors.ElectricCyan)
+            }
+
+            items(items = discoveredChannels, key = { "disc_${it.id}" }) { channel ->
+                DiscoveredRow(
+                    channel = channel,
+                    onJoin = { onJoinDiscovered(channel) }
                 )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteConfirm = false
-                        onDelete()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PremiumColors.BusyRed
-                    )
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel", color = PremiumColors.TextSecondary)
-                }
-            },
-            containerColor = PremiumColors.SpaceGray,
-            shape = RoundedCornerShape(16.dp)
+            }
+        }
+
+        item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+// =============================================================================
+// SECTION LABEL — Clean, minimal
+// =============================================================================
+
+@Composable
+private fun SectionLabel(title: String, count: Int, color: Color = PremiumColors.TextSecondary) {
+    Row(
+        modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            letterSpacing = 1.5.sp
+        )
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.labelSmall,
+            color = color.copy(alpha = 0.7f)
         )
     }
 }
 
-/**
- * Discovered channel card - shows channels from other devices
- */
+// =============================================================================
+// CHANNEL ROW — Simple list item (Zello-style)
+// =============================================================================
+
 @Composable
-private fun DiscoveredChannelCard(
+private fun ChannelRow(
+    channel: ChannelUiModel,
+    isJoined: Boolean,
+    isOwner: Boolean,
+    onTap: () -> Unit,
+    onJoin: () -> Unit,
+    onLeave: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var showMenu by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (isJoined) PremiumColors.SpaceGrayLight.copy(alpha = 0.5f)
+                else Color.Transparent
+            )
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onTap()
+            }
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Status dot
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isJoined) PremiumColors.LaserLime else PremiumColors.TextSecondary.copy(alpha = 0.4f)
+                )
+        )
+
+        Spacer(Modifier.width(14.dp))
+
+        // Channel info
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = channel.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = PremiumColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "${channel.onlineCount} members",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PremiumColors.TextSecondary
+                )
+                if (isJoined) {
+                    Text(
+                        text = "Joined",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = PremiumColors.LaserLime,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // Lock icon
+        Icon(
+            Icons.Default.Lock,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = PremiumColors.LaserLime.copy(alpha = 0.6f)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Action: Join or Menu
+        if (!isJoined) {
+            TextButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onJoin()
+                },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text("JOIN", fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                    color = PremiumColors.ElectricCyan, letterSpacing = 1.sp)
+            }
+        } else {
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert, null,
+                        Modifier.size(18.dp), tint = PremiumColors.TextSecondary
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    containerColor = PremiumColors.SpaceGrayLight
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Open", color = PremiumColors.TextPrimary) },
+                        onClick = { showMenu = false; onTap() },
+                        leadingIcon = { Icon(Icons.Default.Mic, null, tint = PremiumColors.ElectricCyan) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Leave", color = PremiumColors.BusyRed) },
+                        onClick = { showMenu = false; onLeave() },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.ExitToApp, null, tint = PremiumColors.BusyRed) }
+                    )
+                    if (isOwner) {
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = PremiumColors.BusyRed) },
+                            onClick = { showMenu = false; onDelete() },
+                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = PremiumColors.BusyRed) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// DISCOVERED ROW
+// =============================================================================
+
+@Composable
+private fun DiscoveredRow(
     channel: ChannelUiModel,
     onJoin: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 16.dp,
-        borderColor = PremiumColors.ElectricCyan.copy(alpha = 0.3f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onJoin()
+            }
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Channel icon with network indicator
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(PremiumColors.ElectricCyan.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Wifi,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = PremiumColors.ElectricCyan
-                    )
-                }
+        // WiFi icon
+        Icon(
+            Icons.Default.Wifi,
+            contentDescription = null,
+            modifier = Modifier.size(10.dp),
+            tint = PremiumColors.ElectricCyan
+        )
 
-                // Network badge
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(PremiumColors.LaserLime)
-                        .border(2.dp, PremiumColors.SpaceGray, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SignalCellularAlt,
-                        contentDescription = null,
-                        modifier = Modifier.size(10.dp),
-                        tint = PremiumColors.DeepSpace
-                    )
-                }
-            }
+        Spacer(Modifier.width(14.dp))
 
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = channel.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = PremiumColors.TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Announcer name
-                    channel.announcerName?.let { announcer ->
-                        Text(
-                            text = "from $announcer",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = PremiumColors.ElectricCyan
-                        )
-                    }
-
-                    // Member count
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.People,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = PremiumColors.TextSecondary
-                        )
-                        Text(
-                            text = "${channel.onlineCount} online",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = PremiumColors.TextSecondary
-                        )
-                    }
-                }
-            }
-
-            // Join button
-            Button(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onJoin()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PremiumColors.ElectricCyan
-                ),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = channel.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = PremiumColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
+                channel.announcerName?.let {
+                    Text(
+                        text = "from $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = PremiumColors.ElectricCyan
+                    )
+                }
+                Text(
+                    text = "${channel.onlineCount} members",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PremiumColors.TextSecondary
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Join", fontWeight = FontWeight.SemiBold)
             }
+        }
+
+        Icon(
+            Icons.Default.Lock, null,
+            Modifier.size(14.dp), tint = PremiumColors.LaserLime.copy(alpha = 0.6f)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        TextButton(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onJoin()
+            },
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Text("JOIN", fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                color = PremiumColors.ElectricCyan, letterSpacing = 1.sp)
         }
     }
 }
 
-/**
- * Empty state for no channels
- */
+// =============================================================================
+// TRANSMITTING WAVEFORM
+// =============================================================================
+
 @Composable
-private fun EmptyChannelsState(
-    onCreateClick: () -> Unit
-) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 24.dp
+private fun TransmittingWaveform() {
+    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(40.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        repeat(9) { index ->
+            val height by infiniteTransition.animateFloat(
+                initialValue = 4f, targetValue = 20f,
+                animationSpec = infiniteRepeatable(
+                    tween(200, delayMillis = index * 30), RepeatMode.Reverse
+                ), label = "bar$index"
+            )
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(PremiumColors.SpaceGrayLight),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.RecordVoiceOver,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = PremiumColors.TextSecondary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "No PTT Channels",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = PremiumColors.TextPrimary
+                    .width(3.dp)
+                    .height(height.dp)
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(PremiumColors.BusyRed)
             )
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(8.dp))
+// =============================================================================
+// EMPTY STATE
+// =============================================================================
 
-            Text(
-                text = "Create a channel to start\npush-to-talk communication",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PremiumColors.TextSecondary,
-                textAlign = TextAlign.Center
-            )
+@Composable
+private fun EmptyChannelsState(onCreateClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Outlined.RecordVoiceOver, null,
+            Modifier.size(64.dp), tint = PremiumColors.TextSecondary.copy(alpha = 0.5f)
+        )
 
-            Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp))
 
-            Button(
-                onClick = onCreateClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PremiumColors.ElectricCyan
-                )
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Create Channel")
-            }
+        Text(
+            text = stringResource(R.string.channels_empty_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = PremiumColors.TextPrimary
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            text = stringResource(R.string.channels_empty_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = PremiumColors.TextSecondary,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(32.dp))
+
+        Button(
+            onClick = onCreateClick,
+            colors = ButtonDefaults.buttonColors(containerColor = PremiumColors.ElectricCyan),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.channels_create), fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -920,7 +782,7 @@ data class ChannelUiModel(
     val onlineCount: Int,
     val priority: String,
     val hasActivity: Boolean,
-    // Jan 2026: Network discovery fields
-    val isDiscovered: Boolean = false,  // true if discovered from another device
-    val announcerName: String? = null   // name of peer who announced this channel
+    val isDiscovered: Boolean = false,
+    val announcerName: String? = null,
+    val isOwner: Boolean = false
 )

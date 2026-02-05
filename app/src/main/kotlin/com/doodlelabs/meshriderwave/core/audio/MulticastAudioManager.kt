@@ -26,6 +26,7 @@ package com.doodlelabs.meshriderwave.core.audio
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.*
+import android.os.Build
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
@@ -122,7 +123,7 @@ class MulticastAudioManager @Inject constructor(
      * @param networkInterface Network interface name (e.g., "wlan0")
      */
     fun initialize(
-        codecBitrate: Int = 12000,
+        codecBitrate: Int = 24000,  // Feb 2026: Bumped from 12kbps to 24kbps for clearer voice
         networkInterface: String? = null
     ): Boolean {
         if (isInitialized) {
@@ -228,8 +229,9 @@ class MulticastAudioManager @Inject constructor(
                 AudioFormat.ENCODING_PCM_16BIT
             )
 
+            // Feb 2026 FIX: MIC not VOICE_COMMUNICATION — Samsung DSP makes voice scary/robotic
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -248,9 +250,22 @@ class MulticastAudioManager @Inject constructor(
             txFrameCount = 0
             txStartTime = System.currentTimeMillis()
 
-            // Start transmit loop
+            // Feb 2026: Half-duplex — mute speaker while transmitting (like real walkie-talkie)
+            audioTrack?.let { it.setVolume(0f) }
+            logD("Half-duplex: speaker muted during TX")
+
+            // Start transmit loop with 60s safety timeout
             transmitJob = scope.launch {
                 transmitLoop()
+            }
+
+            // Feb 2026: Safety timeout — auto-stop after 60s to prevent infinite TX
+            scope.launch {
+                kotlinx.coroutines.delay(60_000)
+                if (isTransmitting.get()) {
+                    logW("SAFETY TIMEOUT: Auto-stopping transmission after 60s")
+                    stopTransmit()
+                }
             }
 
             scope.launch {
@@ -285,6 +300,10 @@ class MulticastAudioManager @Inject constructor(
         scope.launch {
             _audioEvents.emit(AudioEvent.TransmitEnded(activeTalkgroup, durationMs, txFrameCount))
         }
+
+        // Feb 2026: Half-duplex — unmute speaker after TX
+        audioTrack?.let { it.setVolume(1f) }
+        logD("Half-duplex: speaker unmuted after TX")
 
         logI("Stopped transmitting: $txFrameCount frames in ${durationMs}ms")
     }
@@ -359,10 +378,13 @@ class MulticastAudioManager @Inject constructor(
             AudioFormat.ENCODING_PCM_16BIT
         )
 
+        // Feb 2026 FIX: Use USAGE_MEDIA to play through SPEAKER (not earpiece).
+        // USAGE_VOICE_COMMUNICATION routes to earpiece by default — user can't hear PTT audio.
+        // Walkie-talkie apps (Zello, VoicePing) all use speaker output.
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -373,11 +395,20 @@ class MulticastAudioManager @Inject constructor(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(bufferSize * 2)
+            .setBufferSizeInBytes(bufferSize * 4)  // Larger buffer for smoother playback
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
+        // Feb 2026 FIX (Bug 25): Log volume level but don't override user preference
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (curVol < maxVol / 5) {
+            logW("Media volume very low ($curVol/$maxVol) — PTT audio may be inaudible")
+        }
+
         audioTrack?.play()
+        logI("AudioTrack started: USAGE_MEDIA, speaker output, buffer=${bufferSize * 4}")
 
         receiveJob = scope.launch {
             receiveLoop()
@@ -415,12 +446,22 @@ class MulticastAudioManager @Inject constructor(
                 val packet = rtpManager.receivePacket()
 
                 if (packet != null) {
+                    // Skip own packets (SSRC filter + half-duplex)
+                    if (packet.ssrc == rtpManager.getOwnSSRC()) {
+                        continue
+                    }
+                    // Half-duplex: don't play audio while we're transmitting
+                    if (isTransmitting.get()) {
+                        continue
+                    }
+
                     // New speaker detection
                     if (packet.ssrc != lastSsrc) {
                         if (lastSsrc != null) {
                             _audioEvents.emit(AudioEvent.ReceiveEnded(activeTalkgroup))
                         }
                         lastSsrc = packet.ssrc
+                        logI("New speaker detected: SSRC=0x${packet.ssrc.toString(16)}")
                         _audioEvents.emit(AudioEvent.ReceiveStarted(activeTalkgroup, packet.ssrc))
                         consecutiveSilence = 0
                     }
@@ -432,6 +473,11 @@ class MulticastAudioManager @Inject constructor(
                         // Play audio
                         audioTrack?.write(pcmData, 0, pcmData.size)
                         rxFrameCount++
+                        if (rxFrameCount % 50 == 0L) {
+                            logD("RX audio: $rxFrameCount frames decoded and played")
+                        }
+                    } else {
+                        logW("Opus decode returned null for ${packet.payload.size}B payload")
                     }
                 } else {
                     // No packet received (timeout)

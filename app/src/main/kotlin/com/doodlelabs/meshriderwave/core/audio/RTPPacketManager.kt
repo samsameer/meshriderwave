@@ -84,9 +84,11 @@ class RTPPacketManager @Inject constructor(
     // Timestamp (32-bit, wraps)
     private var rtpTimestamp = SecureRandom().nextLong() and 0xFFFFFFFFL
 
-    // UDP sockets for send/receive
+    // UDP socket for send/receive (single socket for Android multicast compatibility)
+    // FIXED Jan 2026: Separate send/receive sockets caused multicast packets to never
+    // arrive on Android. Using a single socket bound to MULTICAST_PORT for both TX/RX.
     private var sendSocket: MulticastSocket? = null
-    private var receiveSocket: MulticastSocket? = null
+    private var receiveSocket: MulticastSocket? = null  // Points to same socket as sendSocket
 
     // Active multicast groups
     private val activeGroups = ConcurrentHashMap<String, InetAddress>()
@@ -301,20 +303,23 @@ class RTPPacketManager @Inject constructor(
 
             logD("Using network interface: ${networkInterface?.name}")
 
-            // Create send socket
-            sendSocket = MulticastSocket().apply {
+            // FIXED Jan 2026: Use SINGLE socket for both send and receive
+            // On Android, separate send/receive MulticastSockets fail to deliver
+            // multicast packets. A single socket bound to MULTICAST_PORT works correctly
+            // for both sending and receiving multicast datagrams.
+            val socket = MulticastSocket(MULTICAST_PORT).apply {
                 reuseAddress = true
-                networkInterface?.let { setNetworkInterface(it) }
+                // Feb 2026 FIX: Do NOT setNetworkInterface — it causes multicast receive
+                // failures on WiFi. The beacon (which works) doesn't set it either.
+                // Let the OS route multicast to the default interface.
                 timeToLive = 32  // Mesh-local scope
-                trafficClass = TOS_EF  // DSCP EF for voice QoS
-            }
-
-            // Create receive socket
-            receiveSocket = MulticastSocket(MULTICAST_PORT).apply {
-                reuseAddress = true
-                networkInterface?.let { setNetworkInterface(it) }
+                // Feb 2026: DSCP EF disabled for now - some WiFi routers drop marked packets
+                // trafficClass = TOS_EF
                 soTimeout = 100  // 100ms timeout for polling
+                loopbackMode = true  // Feb 2026 FIX: DISABLE loopback (true = OFF) — prevents hearing own voice
             }
+            sendSocket = socket
+            receiveSocket = socket
 
             logD("RTP manager initialized: SSRC=0x${ssrc.toString(16)}, DSCP=EF")
             true
@@ -342,6 +347,12 @@ class RTPPacketManager @Inject constructor(
      */
     fun joinGroup(address: String): Boolean {
         return try {
+            // Skip if already joined this group
+            if (activeGroups.containsKey(address)) {
+                logD("Already joined multicast group: $address")
+                return true
+            }
+
             val group = InetAddress.getByName(address)
             if (!group.isMulticastAddress) {
                 logE("Not a multicast address: $address")
@@ -349,12 +360,10 @@ class RTPPacketManager @Inject constructor(
             }
 
             receiveSocket?.let { socket ->
-                val socketAddress = InetSocketAddress(group, MULTICAST_PORT)
-                if (networkInterface != null) {
-                    socket.joinGroup(socketAddress, networkInterface)
-                } else {
-                    socket.joinGroup(group)
-                }
+                // Feb 2026 FIX: Use simple joinGroup(InetAddress) like PTTChannelBeacon.
+                // The InetSocketAddress+NetworkInterface variant fails silently on some
+                // WiFi networks (multicast packets not received despite successful join).
+                socket.joinGroup(group)
             }
 
             activeGroups[address] = group
@@ -374,12 +383,7 @@ class RTPPacketManager @Inject constructor(
             val group = activeGroups.remove(address) ?: return
 
             receiveSocket?.let { socket ->
-                val socketAddress = InetSocketAddress(group, MULTICAST_PORT)
-                if (networkInterface != null) {
-                    socket.leaveGroup(socketAddress, networkInterface)
-                } else {
-                    socket.leaveGroup(group)
-                }
+                socket.leaveGroup(group)
             }
 
             logD("Left multicast group: $address")
@@ -509,9 +513,8 @@ class RTPPacketManager @Inject constructor(
             activeGroups.keys.forEach { leaveGroup(it) }
             activeGroups.clear()
 
-            // Close sockets
+            // Close socket (send and receive share the same socket)
             sendSocket?.close()
-            receiveSocket?.close()
             sendSocket = null
             receiveSocket = null
 
@@ -576,6 +579,11 @@ class RTPPacketManager @Inject constructor(
             logE("Error releasing multicast lock", e)
         }
     }
+
+    /**
+     * Get own SSRC for filtering loopback packets
+     */
+    fun getOwnSSRC(): Long = ssrc
 
     /**
      * Get statistics

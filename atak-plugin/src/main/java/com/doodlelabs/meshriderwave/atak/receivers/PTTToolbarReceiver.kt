@@ -1,26 +1,26 @@
 /**
  * PTT Toolbar Receiver
  *
- * Handles toolbar button events from ATAK's toolbar system.
- * This receiver is registered in the manifest and receives button press events.
+ * ATAK DropDownReceiver for PTT toolbar button events.
+ * Handles press/release/toggle from ATAK's toolbar system.
  *
  * Copyright (C) 2024-2026 DoodleLabs. All Rights Reserved.
  */
 package com.doodlelabs.meshriderwave.atak.receivers
 
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.atakmap.android.dropdown.DropDownReceiver
+import com.atakmap.android.maps.MapView
 import com.doodlelabs.meshriderwave.atak.MRWavePlugin
 
-class PTTToolbarReceiver : BroadcastReceiver() {
+class PTTToolbarReceiver(mapView: MapView) : DropDownReceiver(mapView) {
 
     companion object {
-        private const val TAG = "PTTToolbarReceiver"
-        const val ACTION_PTT_TOOLBAR = "com.doodlelabs.meshriderwave.atak.PTT_TOOLBAR"
+        private const val TAG = "MRWave:PTTToolbar"
+        const val ACTION_PTT_TOOLBAR = "${MRWavePlugin.PLUGIN_PACKAGE}.PTT_TOOLBAR"
 
-        // Extras
         const val EXTRA_ACTION = "action"
         const val ACTION_PRESS = "press"
         const val ACTION_RELEASE = "release"
@@ -29,10 +29,6 @@ class PTTToolbarReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "onReceive: ${intent.action}")
-
-        if (intent.action != ACTION_PTT_TOOLBAR) {
-            return
-        }
 
         val plugin = MRWavePlugin.getInstance()
         if (plugin == null) {
@@ -57,9 +53,11 @@ class PTTToolbarReceiver : BroadcastReceiver() {
                     plugin.startPTT()
                 }
             }
-            else -> {
-                Log.w(TAG, "onReceive: Unknown action")
-            }
+            else -> Log.w(TAG, "onReceive: Unknown action")
         }
+    }
+
+    override fun disposeImpl() {
+        Log.d(TAG, "disposeImpl: Cleaning up PTT toolbar receiver")
     }
 }

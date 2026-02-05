@@ -293,6 +293,12 @@ class OpusCodecManager @Inject constructor() {
 
     /**
      * Initialize MediaCodec encoder and decoder
+     *
+     * FIXED Jan 2026:
+     * - Removed incorrect AACObjectLC profile (was AAC profile on Opus codec!)
+     * - Added required CSD (Codec-Specific Data) buffers for Opus decoder
+     *   Without CSD, Samsung devices put decoder in Released/Error state
+     * - Encoder and decoder initialized independently so one failure doesn't kill both
      */
     private fun initializeMediaCodec(config: CodecConfig): Boolean {
         try {
@@ -305,25 +311,57 @@ class OpusCodecManager @Inject constructor() {
                 setInteger(MediaFormat.KEY_BIT_RATE, config.bitrate)
                 setInteger(MediaFormat.KEY_SAMPLE_RATE, config.sampleRate)
                 setInteger(MediaFormat.KEY_CHANNEL_COUNT, config.channels)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-                }
+                // NOTE: Do NOT set KEY_PROFILE to AACObjectLC — that's for AAC, not Opus
             }
 
             encoder = MediaCodec.createEncoderByType(MIME_OPUS)
             encoder?.configure(encoderFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             encoder?.start()
+            logD("MediaCodec Opus encoder created successfully")
 
-            // Create decoder
+            // Create decoder with required CSD buffers
+            // Opus decoder on Android requires 3 CSD buffers:
+            //   CSD-0: Opus identification header (19 bytes min)
+            //   CSD-1: Pre-skip value (8 bytes, little-endian long)
+            //   CSD-2: Seek pre-roll (8 bytes, little-endian long, typically 80ms = 80000000 ns)
             val decoderFormat = MediaFormat.createAudioFormat(
                 MIME_OPUS,
                 config.sampleRate,
                 config.channels
-            )
+            ).apply {
+                // CSD-0: Opus identification header
+                // Format: "OpusHead" + version(1) + channels(1) + pre-skip(2) + sample_rate(4) + gain(2) + mapping_family(1)
+                val opusHeader = ByteBuffer.allocate(19).order(ByteOrder.LITTLE_ENDIAN).apply {
+                    put("OpusHead".toByteArray())  // Magic signature (8 bytes)
+                    put(1)                          // Version (1 byte)
+                    put(config.channels.toByte())   // Channel count (1 byte)
+                    putShort(0)                     // Pre-skip in samples (2 bytes)
+                    putInt(config.sampleRate)        // Input sample rate (4 bytes)
+                    putShort(0)                     // Output gain (2 bytes)
+                    put(0)                          // Channel mapping family (1 byte)
+                    flip()
+                }
+                setByteBuffer("csd-0", opusHeader)
+
+                // CSD-1: Pre-skip in nanoseconds (0 for our use case)
+                val preSkip = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder()).apply {
+                    putLong(0L)
+                    flip()
+                }
+                setByteBuffer("csd-1", preSkip)
+
+                // CSD-2: Seek pre-roll in nanoseconds (80ms = 80,000,000 ns, standard for Opus)
+                val seekPreRoll = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder()).apply {
+                    putLong(80_000_000L)
+                    flip()
+                }
+                setByteBuffer("csd-2", seekPreRoll)
+            }
 
             decoder = MediaCodec.createDecoderByType(MIME_OPUS)
             decoder?.configure(decoderFormat, null, null, 0)
             decoder?.start()
+            logD("MediaCodec Opus decoder created successfully (with CSD headers)")
 
             logD("MediaCodec Opus encoder and decoder created successfully")
             return true
@@ -523,6 +561,9 @@ class OpusCodecManager @Inject constructor() {
 
     /**
      * Decode using MediaCodec
+     *
+     * FIXED Jan 2026: Added IllegalStateException handling to detect Released/Error state
+     * and reinitialize the decoder instead of spamming errors forever.
      */
     private fun decodeWithMediaCodec(encodedData: ByteArray): ByteArray? {
         val dec = decoder ?: return null
@@ -553,6 +594,51 @@ class OpusCodecManager @Inject constructor() {
                 return decodedData
             }
 
+            return null
+        } catch (e: IllegalStateException) {
+            // Decoder is in Released or Error state — try to reinitialize it once
+            logE("MediaCodec decoder in bad state, reinitializing: ${e.message}")
+            try {
+                decoder?.release()
+            } catch (_: Exception) {}
+            decoder = null
+
+            // Reinitialize just the decoder
+            try {
+                val decoderFormat = MediaFormat.createAudioFormat(
+                    MIME_OPUS,
+                    currentConfig.sampleRate,
+                    currentConfig.channels
+                ).apply {
+                    val opusHeader = ByteBuffer.allocate(19).order(ByteOrder.LITTLE_ENDIAN).apply {
+                        put("OpusHead".toByteArray())
+                        put(1)
+                        put(currentConfig.channels.toByte())
+                        putShort(0)
+                        putInt(currentConfig.sampleRate)
+                        putShort(0)
+                        put(0)
+                        flip()
+                    }
+                    setByteBuffer("csd-0", opusHeader)
+                    val preSkip = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder()).apply {
+                        putLong(0L); flip()
+                    }
+                    setByteBuffer("csd-1", preSkip)
+                    val seekPreRoll = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder()).apply {
+                        putLong(80_000_000L); flip()
+                    }
+                    setByteBuffer("csd-2", seekPreRoll)
+                }
+                decoder = MediaCodec.createDecoderByType(MIME_OPUS)
+                decoder?.configure(decoderFormat, null, null, 0)
+                decoder?.start()
+                logI("MediaCodec Opus decoder reinitialized successfully")
+            } catch (reinitEx: Exception) {
+                logE("Failed to reinitialize decoder, falling back to passthrough", reinitEx)
+                useMediaCodec = false
+                codecMode = CodecMode.PASSTHROUGH
+            }
             return null
         } catch (e: Exception) {
             logE("MediaCodec decode error", e)

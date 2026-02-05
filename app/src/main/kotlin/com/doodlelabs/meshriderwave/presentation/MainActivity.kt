@@ -7,7 +7,9 @@ package com.doodlelabs.meshriderwave.presentation
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -61,6 +63,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         requestPermissions()
+
+        // Feb 2026 FIX: If permissions were already granted (e.g., via adb),
+        // the permission callback never fires and MeshService never starts.
+        // Check and start immediately if already granted.
+        if (hasRequiredPermissions()) {
+            startMeshService()
+        }
 
         setContent {
             // Calculate WindowSizeClass for responsive layouts
@@ -121,6 +130,13 @@ class MainActivity : ComponentActivity() {
         // Will be requested when enabling Blue Force Tracking
 
         permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    private fun hasRequiredPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
     }
 
     private fun startMeshService() {

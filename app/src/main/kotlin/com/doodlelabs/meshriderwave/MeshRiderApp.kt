@@ -10,6 +10,8 @@ package com.doodlelabs.meshriderwave
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
@@ -51,24 +53,55 @@ class MeshRiderApp : Application() {
                 lockscreenVisibility = NotificationCompat.VISIBILITY_SECRET
             }
 
-            // Call channel
-            val callChannel = NotificationChannel(
-                CHANNEL_CALLS,
+            // Incoming calls channel - IMPORTANCE_HIGH with ringtone
+            // Per developer.android.com/develop/connectivity/telecom/voip-app/notifications
+            val incomingChannel = NotificationChannel(
+                CHANNEL_CALLS_INCOMING,
                 "Incoming Calls",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Incoming call notifications"
+                description = "Incoming call notifications with ringtone"
                 setShowBadge(true)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 200, 500)
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setLegacyStreamType(android.media.AudioManager.STREAM_RING)
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .build()
+                )
             }
 
-            notificationManager.createNotificationChannels(listOf(serviceChannel, callChannel))
+            // Ongoing calls channel - IMPORTANCE_DEFAULT (no sound)
+            val ongoingChannel = NotificationChannel(
+                CHANNEL_CALLS_ONGOING,
+                "Ongoing Calls",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Ongoing call notifications"
+                setShowBadge(false)
+                setSound(null, null)
+            }
+
+            // Delete legacy channel from previous versions
+            @Suppress("DEPRECATION")
+            notificationManager.deleteNotificationChannel(CHANNEL_CALLS)
+
+            notificationManager.createNotificationChannels(
+                listOf(serviceChannel, incomingChannel, ongoingChannel)
+            )
         }
     }
 
     companion object {
         const val CHANNEL_SERVICE = "mesh_rider_service"
+        const val CHANNEL_CALLS_INCOMING = "mesh_rider_calls_incoming"
+        const val CHANNEL_CALLS_ONGOING = "mesh_rider_calls_ongoing"
+
+        // Legacy channel ID — keep for migration (old channel gets deleted)
+        @Deprecated("Use CHANNEL_CALLS_INCOMING or CHANNEL_CALLS_ONGOING")
         const val CHANNEL_CALLS = "mesh_rider_calls"
 
         lateinit var instance: MeshRiderApp

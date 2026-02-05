@@ -111,7 +111,7 @@ class FloorControlManager @Inject constructor(
         val errorMessage: String? = null
     ) {
         val canRequest: Boolean
-            get() = state == FloorState.IDLE || state == FloorState.TAKEN
+            get() = state == FloorState.IDLE || state == FloorState.TAKEN || state == FloorState.ERROR
 
         val isTransmitting: Boolean
             get() = state == FloorState.GRANTED
@@ -327,7 +327,9 @@ class FloorControlManager @Inject constructor(
         // Send floor request message (encrypted)
         val sent = floorProtocol.sendFloorRequest(channelId, request)
         if (!sent) {
-            stateFlow.update { it.copy(state = FloorState.ERROR, errorMessage = "Failed to send request") }
+            // Feb 2026 FIX: Reset to IDLE (not ERROR) so next PTT press can retry
+            stateFlow.update { it.copy(state = FloorState.IDLE, myRequest = null, errorMessage = null) }
+            logW("Floor request send failed — reset to IDLE for retry")
             return FloorRequestResult.Error("Failed to send floor request")
         }
 

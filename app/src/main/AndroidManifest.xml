@@ -27,6 +27,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -34,6 +35,14 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Telecom (VoIP call integration) -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- UWB (Ultra-Wideband precise ranging) -->
+    <uses-permission android:name="android.permission.UWB_RANGING" />
+    <uses-feature android:name="android.hardware.uwb" android:required="false" />
 
     <!-- Boot & Wake -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -97,7 +106,7 @@
             android:name=".core.network.MeshService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="microphone|camera|mediaPlayback" />
+            android:foregroundServiceType="microphone|camera|mediaPlayback|phoneCall" />
 
         <!-- Boot Receiver -->
         <receiver

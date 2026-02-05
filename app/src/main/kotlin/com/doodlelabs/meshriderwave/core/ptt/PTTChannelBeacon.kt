@@ -73,6 +73,10 @@ class PTTChannelBeacon @Inject constructor(
     private val _discoveredChannels = MutableStateFlow<Map<String, DiscoveredChannel>>(emptyMap())
     val discoveredChannels: StateFlow<Map<String, DiscoveredChannel>> = _discoveredChannels.asStateFlow()
 
+    // Feb 2026 FIX: Suppressed channel IDs — channels we deleted or that were deleted by peers.
+    // Prevents deleted channels from re-appearing via beacon re-announce.
+    private val suppressedChannelIds = mutableSetOf<String>()
+
     // Callbacks
     var onChannelDiscovered: ((PTTChannel, String) -> Unit)? = null  // channel, peerName
     var onChannelJoinRequest: ((String, ByteArray, String, String) -> Unit)? = null  // channelId, peerKey, peerName, peerIp
@@ -171,8 +175,9 @@ class PTTChannelBeacon @Inject constructor(
         }
         Log.i(TAG, "Announced channel deletion: ${channelId.take(4).joinToString("") { "%02x".format(it) }}")
 
-        // Also remove from local discovered channels immediately
+        // Also remove from local discovered channels and suppress future announces
         val channelHex = channelId.toHexString()
+        suppressedChannelIds.add(channelHex)
         _discoveredChannels.update { current ->
             current - channelHex
         }
@@ -184,10 +189,11 @@ class PTTChannelBeacon @Inject constructor(
      */
     fun clearDiscoveredChannel(channelId: ByteArray) {
         val channelHex = channelId.toHexString()
+        suppressedChannelIds.add(channelHex)
         _discoveredChannels.update { current ->
             current - channelHex
         }
-        Log.d(TAG, "Cleared discovered channel: ${channelId.take(4).joinToString("") { "%02x".format(it) }}")
+        Log.d(TAG, "Cleared and suppressed discovered channel: ${channelId.take(4).joinToString("") { "%02x".format(it) }}")
     }
 
     // ========== Private Methods ==========
@@ -279,6 +285,12 @@ class PTTChannelBeacon @Inject constructor(
 
         Log.d(TAG, "Received channel announce: $name from $senderName ($senderIp)")
 
+        // Feb 2026 FIX: Skip channels that have been deleted/suppressed
+        if (channelHex in suppressedChannelIds) {
+            Log.d(TAG, "Ignoring suppressed channel: $name ($channelHex)")
+            return
+        }
+
         // Create discovered channel entry
         val discovered = DiscoveredChannel(
             channelId = channelId,
@@ -329,6 +341,9 @@ class PTTChannelBeacon @Inject constructor(
 
         Log.i(TAG, "Received channel delete notification from $senderName")
 
+        // Feb 2026 FIX: Add to suppression list so beacon re-announces are ignored
+        suppressedChannelIds.add(channelHex)
+
         // Remove from discovered channels immediately
         _discoveredChannels.update { current ->
             val removed = current - channelHex
@@ -336,6 +351,16 @@ class PTTChannelBeacon @Inject constructor(
                 Log.i(TAG, "Removed deleted channel from discovered list: ${channelId.take(4).joinToString("") { "%02X".format(it) }}")
             }
             removed
+        }
+
+        // Feb 2026 FIX: Also remove from local repository so we stop beaconing it
+        scope.launch {
+            try {
+                pttChannelRepository.deleteChannel(channelId)
+                Log.i(TAG, "Removed deleted channel from local repo (owner deleted it)")
+            } catch (e: Exception) {
+                Log.d(TAG, "Channel not in local repo or already removed: ${e.message}")
+            }
         }
 
         // Notify via callback (in case UI needs to update)

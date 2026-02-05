@@ -1,35 +1,15 @@
 /**
- * MeshRider Wave ATAK Plugin
+ * MeshRider Wave ATAK Plugin — Lifecycle
  *
- * Main plugin class that integrates MR Wave PTT functionality into ATAK.
- * This plugin provides:
- * - PTT button on ATAK toolbar for push-to-talk voice transmission
- * - Channel selector dropdown for switching PTT channels
- * - CoT (Cursor-on-Target) message synchronization with MR Wave app
- * - Blue Force Tracking integration - peer locations on ATAK map
+ * Per ATAK plugin architecture (PluginLifecycle → MapComponent → DropDownReceiver):
+ * - This class is the PluginLifecycle (1st core class)
+ * - Creates and delegates to MRWaveMapComponent (2nd core class)
+ * - MapComponent registers DropDownReceivers (3rd core class)
  *
- * Architecture:
- * ┌─────────────────────────────────────────────────────────────┐
- * │                        ATAK HOST                             │
- * │  ┌─────────────────┐  ┌──────────────────────────────────┐  │
- * │  │ MR Wave Plugin  │  │         ATAK Core                │  │
- * │  │                 │  │                                  │  │
- * │  │ ┌─────────────┐ │  │ ┌────────────┐  ┌─────────────┐ │  │
- * │  │ │ PTT Button  │─┼──┼→│ Toolbar    │  │ Map View    │ │  │
- * │  │ └─────────────┘ │  │ └────────────┘  └─────────────┘ │  │
- * │  │                 │  │                       ↑          │  │
- * │  │ ┌─────────────┐ │  │                       │          │  │
- * │  │ │ CoT Bridge  │─┼──┼───────────────────────┘          │  │
- * │  │ └─────────────┘ │  │                                  │  │
- * │  └────────┬────────┘  └──────────────────────────────────┘  │
- * │           │                                                  │
- * │           │ Intent Bridge (Signature Protected)              │
- * │           ↓                                                  │
- * │  ┌─────────────────┐                                        │
- * │  │  MR Wave App    │ (Separate APK)                         │
- * │  │  ATAKBridge.kt  │                                        │
- * │  └─────────────────┘                                        │
- * └─────────────────────────────────────────────────────────────┘
+ * References:
+ * - https://toyon.github.io/LearnATAK
+ * - https://www.riis.com/blog/atak-plugins-part-1
+ * - https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV
  *
  * Copyright (C) 2024-2026 DoodleLabs. All Rights Reserved.
  */
@@ -38,38 +18,20 @@ package com.doodlelabs.meshriderwave.atak
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.res.Configuration
 import android.util.Log
-import com.doodlelabs.meshriderwave.atak.receivers.ChannelDropdownReceiver
-import com.doodlelabs.meshriderwave.atak.receivers.CoTReceiver
-import com.doodlelabs.meshriderwave.atak.receivers.MRWaveResponseReceiver
-import com.doodlelabs.meshriderwave.atak.receivers.PTTToolbarReceiver
+import com.atakmap.android.maps.MapView
 import com.doodlelabs.meshriderwave.atak.toolbar.PTTToolbarComponent
 import transapps.maps.plugin.lifecycle.Lifecycle
-import transapps.mapi.MapView
 
-/**
- * Main ATAK Plugin implementation for MeshRider Wave.
- *
- * Lifecycle:
- * 1. onCreate - Initialize plugin components, register receivers
- * 2. onStart - Register toolbar button, start CoT sync
- * 3. onPause - Pause CoT sync (battery optimization)
- * 4. onResume - Resume CoT sync
- * 5. onDestroy - Unregister receivers, cleanup resources
- */
 class MRWavePlugin : Lifecycle {
 
     companion object {
-        private const val TAG = "MRWavePlugin"
+        private const val TAG = "MRWave:Plugin"
 
-        // Plugin identification
         const val PLUGIN_PACKAGE = "com.doodlelabs.meshriderwave.atak"
         const val PLUGIN_NAME = "MeshRider Wave"
         const val PLUGIN_VERSION = "1.0.0"
-
-        // MR Wave app package
         const val MRWAVE_PACKAGE = "com.doodlelabs.meshriderwave"
 
         // Intent actions for communication with MR Wave app
@@ -79,51 +41,57 @@ class MRWavePlugin : Lifecycle {
         const val ACTION_SET_CHANNEL = "$MRWAVE_PACKAGE.action.SET_CHANNEL"
         const val ACTION_GET_STATUS = "$MRWAVE_PACKAGE.action.GET_STATUS"
 
-        // Extras
         const val EXTRA_CHANNEL_ID = "$MRWAVE_PACKAGE.extra.CHANNEL_ID"
         const val EXTRA_PRIORITY = "$MRWAVE_PACKAGE.extra.PRIORITY"
         const val EXTRA_CALLBACK_ACTION = "$MRWAVE_PACKAGE.extra.CALLBACK_ACTION"
 
-        // Singleton instance for access from receivers
         @Volatile
         private var instance: MRWavePlugin? = null
 
         fun getInstance(): MRWavePlugin? = instance
     }
 
-    // Context references
     private var pluginContext: Context? = null
     private var activity: Activity? = null
-    private var mapView: MapView? = null
 
-    // Plugin components
+    // MapComponent — 2nd core class (handles receiver registration + CoT dispatching)
+    private var mapComponent: MRWaveMapComponent? = null
+
+    // Toolbar
     private var pttToolbarComponent: PTTToolbarComponent? = null
-    private var pttToolbarReceiver: PTTToolbarReceiver? = null
-    private var channelDropdownReceiver: ChannelDropdownReceiver? = null
-    private var cotReceiver: CoTReceiver? = null
-    private var mrWaveResponseReceiver: MRWaveResponseReceiver? = null
 
-    // Plugin state
+    // State
     private var isActive = false
     private var isPTTActive = false
     private var currentChannelId: String? = null
     private var currentChannelName: String = "Default"
 
-    override fun onCreate(activity: Activity, mapView: MapView) {
+    override fun onCreate(activity: Activity, mapView: transapps.mapi.MapView) {
         Log.i(TAG, "onCreate: Initializing MeshRider Wave ATAK Plugin v$PLUGIN_VERSION")
 
         this.activity = activity
-        this.mapView = mapView
         this.pluginContext = activity.applicationContext
-
         instance = this
 
         try {
-            // Initialize plugin components
-            initializeToolbar()
-            registerReceivers()
+            // Get ATAK's MapView (the real one, not transapps stub)
+            val atakMapView = MapView.getMapView()
+            if (atakMapView != null) {
+                // Create MapComponent — this registers all DropDownReceivers
+                mapComponent = MRWaveMapComponent().also { component ->
+                    component.onCreate(
+                        activity,
+                        Intent(),
+                        atakMapView
+                    )
+                    component.setPluginContext(activity.applicationContext)
+                }
+                Log.i(TAG, "onCreate: MapComponent created and initialized")
+            } else {
+                Log.w(TAG, "onCreate: ATAK MapView not available (running in stub mode)")
+            }
 
-            // Request initial status from MR Wave app
+            initializeToolbar()
             requestMRWaveStatus()
 
             Log.i(TAG, "onCreate: Plugin initialized successfully")
@@ -135,46 +103,38 @@ class MRWavePlugin : Lifecycle {
     override fun onStart() {
         Log.d(TAG, "onStart")
         isActive = true
-
-        // Refresh status from MR Wave app
         requestMRWaveStatus()
     }
 
     override fun onPause() {
         Log.d(TAG, "onPause")
-        // Keep running but reduce update frequency
     }
 
     override fun onResume() {
         Log.d(TAG, "onResume")
         isActive = true
-
-        // Refresh UI state
         pttToolbarComponent?.updateState(isPTTActive, currentChannelName)
     }
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy: Cleaning up plugin resources")
-
         isActive = false
 
         try {
-            // Stop any active PTT transmission
-            if (isPTTActive) {
-                stopPTT()
+            if (isPTTActive) stopPTT()
+
+            // Destroy MapComponent (unregisters all DropDown receivers)
+            val atakMapView = MapView.getMapView()
+            if (atakMapView != null && mapComponent != null) {
+                mapComponent?.onDestroy(activity as Context, atakMapView)
             }
+            mapComponent = null
 
-            // Unregister receivers
-            unregisterReceivers()
-
-            // Cleanup components
             pttToolbarComponent?.dispose()
             pttToolbarComponent = null
 
-            // Clear references
             pluginContext = null
             activity = null
-            mapView = null
             instance = null
 
             Log.i(TAG, "onDestroy: Plugin cleanup complete")
@@ -185,7 +145,6 @@ class MRWavePlugin : Lifecycle {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         Log.d(TAG, "onConfigurationChanged: ${newConfig.orientation}")
-        // Re-layout toolbar if needed
         pttToolbarComponent?.onConfigurationChanged(newConfig)
     }
 
@@ -193,105 +152,27 @@ class MRWavePlugin : Lifecycle {
         Log.d(TAG, "onFinish")
     }
 
-    // ========== Toolbar Management ==========
+    // ========== Toolbar ==========
 
     private fun initializeToolbar() {
         val context = pluginContext ?: return
-
         pttToolbarComponent = PTTToolbarComponent(context).apply {
             onPTTPressed = { startPTT() }
             onPTTReleased = { stopPTT() }
             onChannelClicked = { showChannelSelector() }
         }
-
-        Log.d(TAG, "initializeToolbar: PTT toolbar component created")
-    }
-
-    // ========== Receiver Registration ==========
-
-    private fun registerReceivers() {
-        val context = pluginContext ?: return
-
-        // PTT Toolbar Receiver
-        pttToolbarReceiver = PTTToolbarReceiver().also { receiver ->
-            val filter = IntentFilter().apply {
-                addAction("$PLUGIN_PACKAGE.PTT_TOOLBAR")
-            }
-            context.registerReceiver(receiver, filter)
-        }
-
-        // Channel Dropdown Receiver
-        channelDropdownReceiver = ChannelDropdownReceiver().also { receiver ->
-            val filter = IntentFilter().apply {
-                addAction("$PLUGIN_PACKAGE.CHANNEL_DROPDOWN")
-            }
-            context.registerReceiver(receiver, filter)
-        }
-
-        // CoT Receiver (for ATAK's CoT messages)
-        cotReceiver = CoTReceiver().also { receiver ->
-            val filter = IntentFilter().apply {
-                addAction("com.atakmap.android.cot.REMOTE_INPUT")
-                addAction("com.atakmap.android.cot.DISPATCH")
-            }
-            context.registerReceiver(receiver, filter)
-        }
-
-        // MR Wave Response Receiver
-        mrWaveResponseReceiver = MRWaveResponseReceiver().also { receiver ->
-            val filter = IntentFilter().apply {
-                addAction("$PLUGIN_PACKAGE.RESPONSE")
-                addAction("$PLUGIN_PACKAGE.PTT_STATE_CHANGED")
-                addAction("$PLUGIN_PACKAGE.CHANNEL_CHANGED")
-            }
-            context.registerReceiver(receiver, filter)
-        }
-
-        Log.d(TAG, "registerReceivers: All receivers registered")
-    }
-
-    private fun unregisterReceivers() {
-        val context = pluginContext ?: return
-
-        listOf(
-            pttToolbarReceiver,
-            channelDropdownReceiver,
-            cotReceiver,
-            mrWaveResponseReceiver
-        ).forEach { receiver ->
-            try {
-                receiver?.let { context.unregisterReceiver(it) }
-            } catch (e: Exception) {
-                Log.w(TAG, "unregisterReceivers: Receiver already unregistered", e)
-            }
-        }
-
-        pttToolbarReceiver = null
-        channelDropdownReceiver = null
-        cotReceiver = null
-        mrWaveResponseReceiver = null
-
-        Log.d(TAG, "unregisterReceivers: All receivers unregistered")
     }
 
     // ========== PTT Control ==========
 
-    /**
-     * Start PTT transmission.
-     * Sends intent to MR Wave app to begin voice transmission on current channel.
-     */
     fun startPTT() {
-        if (isPTTActive) {
-            Log.w(TAG, "startPTT: Already transmitting")
-            return
-        }
-
-        Log.i(TAG, "startPTT: Starting transmission on channel '$currentChannelName'")
+        if (isPTTActive) return
+        Log.i(TAG, "startPTT: Starting transmission on '$currentChannelName'")
 
         val intent = Intent(ACTION_PTT_START).apply {
             setPackage(MRWAVE_PACKAGE)
             putExtra(EXTRA_CHANNEL_ID, currentChannelId)
-            putExtra(EXTRA_PRIORITY, 5) // Normal priority
+            putExtra(EXTRA_PRIORITY, 5)
             putExtra(EXTRA_CALLBACK_ACTION, "$PLUGIN_PACKAGE.PTT_STATE_CHANGED")
         }
 
@@ -300,20 +181,12 @@ class MRWavePlugin : Lifecycle {
             isPTTActive = true
             pttToolbarComponent?.updateState(isPTTActive, currentChannelName)
         } catch (e: Exception) {
-            Log.e(TAG, "startPTT: Failed to send intent", e)
+            Log.e(TAG, "startPTT: Failed", e)
         }
     }
 
-    /**
-     * Stop PTT transmission.
-     * Sends intent to MR Wave app to end voice transmission.
-     */
     fun stopPTT() {
-        if (!isPTTActive) {
-            Log.w(TAG, "stopPTT: Not currently transmitting")
-            return
-        }
-
+        if (!isPTTActive) return
         Log.i(TAG, "stopPTT: Stopping transmission")
 
         val intent = Intent(ACTION_PTT_STOP).apply {
@@ -326,70 +199,49 @@ class MRWavePlugin : Lifecycle {
             isPTTActive = false
             pttToolbarComponent?.updateState(isPTTActive, currentChannelName)
         } catch (e: Exception) {
-            Log.e(TAG, "stopPTT: Failed to send intent", e)
+            Log.e(TAG, "stopPTT: Failed", e)
         }
     }
 
     // ========== Channel Management ==========
 
-    /**
-     * Show channel selector dropdown.
-     * Requests channel list from MR Wave app and displays selection UI.
-     */
     fun showChannelSelector() {
-        Log.d(TAG, "showChannelSelector: Requesting channels from MR Wave")
-
+        Log.d(TAG, "showChannelSelector: Requesting channels")
         val intent = Intent(ACTION_GET_CHANNELS).apply {
             setPackage(MRWAVE_PACKAGE)
             putExtra(EXTRA_CALLBACK_ACTION, "$PLUGIN_PACKAGE.RESPONSE")
         }
-
         try {
             pluginContext?.sendBroadcast(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "showChannelSelector: Failed to request channels", e)
+            Log.e(TAG, "showChannelSelector: Failed", e)
         }
     }
 
-    /**
-     * Set active PTT channel.
-     *
-     * @param channelId Channel ID to switch to
-     * @param channelName Display name of the channel
-     */
     fun setChannel(channelId: String, channelName: String) {
-        Log.i(TAG, "setChannel: Switching to channel '$channelName' ($channelId)")
-
+        Log.i(TAG, "setChannel: '$channelName' ($channelId)")
         val intent = Intent(ACTION_SET_CHANNEL).apply {
             setPackage(MRWAVE_PACKAGE)
             putExtra(EXTRA_CHANNEL_ID, channelId)
             putExtra(EXTRA_CALLBACK_ACTION, "$PLUGIN_PACKAGE.CHANNEL_CHANGED")
         }
-
         try {
             pluginContext?.sendBroadcast(intent)
             currentChannelId = channelId
             currentChannelName = channelName
             pttToolbarComponent?.updateState(isPTTActive, currentChannelName)
         } catch (e: Exception) {
-            Log.e(TAG, "setChannel: Failed to set channel", e)
+            Log.e(TAG, "setChannel: Failed", e)
         }
     }
 
     // ========== Status Updates ==========
 
-    /**
-     * Request current status from MR Wave app.
-     * Called on start and resume to sync state.
-     */
     private fun requestMRWaveStatus() {
-        Log.d(TAG, "requestMRWaveStatus: Requesting status from MR Wave")
-
         val intent = Intent(ACTION_GET_STATUS).apply {
             setPackage(MRWAVE_PACKAGE)
             putExtra(EXTRA_CALLBACK_ACTION, "$PLUGIN_PACKAGE.RESPONSE")
         }
-
         try {
             pluginContext?.sendBroadcast(intent)
         } catch (e: Exception) {
@@ -397,42 +249,22 @@ class MRWavePlugin : Lifecycle {
         }
     }
 
-    /**
-     * Handle status update from MR Wave app.
-     * Called by MRWaveResponseReceiver when status response is received.
-     */
-    fun handleStatusUpdate(
-        isConnected: Boolean,
-        isPTTActive: Boolean,
-        channelId: String?,
-        channelName: String?
-    ) {
-        Log.d(TAG, "handleStatusUpdate: connected=$isConnected, ptt=$isPTTActive, channel=$channelName")
-
+    fun handleStatusUpdate(isConnected: Boolean, isPTTActive: Boolean, channelId: String?, channelName: String?) {
         this.isPTTActive = isPTTActive
         this.currentChannelId = channelId
         this.currentChannelName = channelName ?: "Default"
-
         pttToolbarComponent?.apply {
             setConnected(isConnected)
             updateState(isPTTActive, this@MRWavePlugin.currentChannelName)
         }
     }
 
-    /**
-     * Handle PTT state change from MR Wave app.
-     */
     fun handlePTTStateChanged(isActive: Boolean) {
-        Log.d(TAG, "handlePTTStateChanged: $isActive")
         this.isPTTActive = isActive
         pttToolbarComponent?.updateState(isPTTActive, currentChannelName)
     }
 
-    /**
-     * Handle channel change from MR Wave app.
-     */
     fun handleChannelChanged(channelId: String, channelName: String) {
-        Log.d(TAG, "handleChannelChanged: $channelName ($channelId)")
         this.currentChannelId = channelId
         this.currentChannelName = channelName
         pttToolbarComponent?.updateState(isPTTActive, currentChannelName)
@@ -445,4 +277,5 @@ class MRWavePlugin : Lifecycle {
     fun isPTTActive(): Boolean = isPTTActive
     fun getCurrentChannelId(): String? = currentChannelId
     fun getCurrentChannelName(): String = currentChannelName
+    fun getMapComponent(): MRWaveMapComponent? = mapComponent
 }

@@ -198,7 +198,8 @@ data class IdentityBeacon(
      */
     fun isValid(): Boolean {
         val age = System.currentTimeMillis() - timestamp
-        return age in 0..MAX_BEACON_AGE_MS
+        // Allow up to 5s clock skew (negative age) between devices
+        return age in -5_000L..MAX_BEACON_AGE_MS
     }
 
     /**
