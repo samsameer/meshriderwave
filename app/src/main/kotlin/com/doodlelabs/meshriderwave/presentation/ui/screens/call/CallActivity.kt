@@ -11,6 +11,11 @@ package com.doodlelabs.meshriderwave.presentation.ui.screens.call
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import com.doodlelabs.meshriderwave.core.telecom.CallActionReceiver
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -41,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
 import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager
+import com.doodlelabs.meshriderwave.core.network.MeshNetworkManager.PendingCallStore
 import com.doodlelabs.meshriderwave.core.network.MeshService
 import com.doodlelabs.meshriderwave.core.telecom.CallNotificationManager
 import com.doodlelabs.meshriderwave.core.telecom.TelecomCallManager
@@ -98,6 +104,17 @@ class CallActivity : ComponentActivity() {
     private var directPeerIpAddress: String? = null
     private var directPeerName: String? = null
 
+    // Broadcast receiver for hangup action from notification
+    private val hangupReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == CallActionReceiver.ACTION_HANGUP_BROADCAST) {
+                logI("hangupReceiver: received hangup broadcast")
+                rtcCall?.hangup()
+                finish()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -110,6 +127,14 @@ class CallActivity : ComponentActivity() {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
+
+        // Register hangup broadcast receiver
+        registerReceiver(
+            hangupReceiver,
+            IntentFilter(CallActionReceiver.ACTION_HANGUP_BROADCAST).apply {
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+        )
 
         val isOutgoing = intent.getBooleanExtra(EXTRA_IS_OUTGOING, true)
         val isVideoCall = intent.getBooleanExtra(EXTRA_IS_VIDEO_CALL, false)
@@ -296,11 +321,17 @@ class CallActivity : ComponentActivity() {
                     onSwitchCamera = { rtcCall?.switchCamera() },
                     onAccept = {
                         callNotificationManager.cancelIncomingNotification()
+                        lifecycleScope.launch {
+                            // RACE CONDITION FIX Feb 2026: Use suspend clear function
+                            com.doodlelabs.meshriderwave.core.network.MeshNetworkManager.PendingCallStore.clearPendingCall()
+                        }
                         rtcCall?.createPeerConnection(offer)
                     },
                     onDecline = {
                         callNotificationManager.cancelIncomingNotification()
                         lifecycleScope.launch {
+                            // RACE CONDITION FIX Feb 2026: Use suspend clear function
+                            com.doodlelabs.meshriderwave.core.network.MeshNetworkManager.PendingCallStore.clearPendingCall()
                             declineCall()
                         }
                         finish()
@@ -450,7 +481,66 @@ class CallActivity : ComponentActivity() {
         signalingSocket = socket
     }
 
+    /**
+     * Handle new intent from notification actions (answer button).
+     *
+     * Per developer.android.com, onNewIntent is called when activity
+     * is already running and receives a new intent (e.g., from notification).
+     *
+     * This handles the case where user taps "Answer" on incoming notification
+     * while CallActivity is already displayed (showing the incoming call UI).
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        logI("onNewIntent: action=${intent.action}")
+
+        // Handle ACTION_ANSWER from notification
+        if (intent.action == CallNotificationManager.ACTION_ANSWER) {
+            logI("onNewIntent: processing answer action from notification")
+            handleAnswerAction(intent)
+        }
+    }
+
+    /**
+     * Process answer action from notification.
+     * Extracts offer and creates peer connection to answer the call.
+     */
+    private fun handleAnswerAction(intent: Intent) {
+        val offer = intent.getStringExtra(EXTRA_OFFER)
+        val remoteAddress = intent.getStringExtra(EXTRA_REMOTE_ADDRESS)
+        val senderKeyBase64 = intent.getStringExtra(EXTRA_SENDER_KEY)
+
+        logI("handleAnswerAction: offer=${offer != null} remoteAddress=$remoteAddress")
+
+        // Update sender key if provided
+        senderKeyBase64?.let {
+            remoteSenderKey = android.util.Base64.decode(it, android.util.Base64.NO_WRAP)
+        }
+
+        // Cancel incoming notification
+        callNotificationManager.cancelIncomingNotification()
+
+        // RACE CONDITION FIX Feb 2026: Use suspend clear function
+        lifecycleScope.launch {
+            com.doodlelabs.meshriderwave.core.network.MeshNetworkManager.PendingCallStore.clearPendingCall()
+        }
+
+        // Create peer connection with the offer
+        if (offer != null) {
+            rtcCall?.createPeerConnection(offer)
+        } else {
+            logE("handleAnswerAction: no offer in intent")
+        }
+    }
+
     override fun onDestroy() {
+        // Unregister hangup broadcast receiver
+        try {
+            unregisterReceiver(hangupReceiver)
+        } catch (e: Exception) {
+            logE("Error unregistering hangup receiver", e)
+        }
+
         // Cancel all call notifications
         callNotificationManager.cancelAll()
 

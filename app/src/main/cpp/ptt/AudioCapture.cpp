@@ -30,15 +30,15 @@ oboe::Result AudioEngine::createCaptureStream() {
            ->setUsage(oboe::Usage::VoiceCommunication)  // PTT use case
            ->setContentType(oboe::ContentType::Speech)
            ->setInputPreset(oboe::InputPreset::VoiceCommunication)  // Best for PTT
-           ->setCallback(&captureCallback_)
-           ->setBufferCapacityInFrames(kBufferSize * 2);
+           ->setCallback(captureCallback_.get())
+           ->setBufferCapacityInFrames(kPcmFrameSizeBytes * 2);
 
     // Build stream
     return builder.openStream(captureStream_);
 }
 
 // Capture callback - receives audio from microphone
-oboe::DataCallbackResult AudioEngine::CaptureCallback::onAudioReady(
+oboe::DataCallbackResult CaptureCallback::onAudioReady(
     oboe::AudioStream* stream,
     void* audioData,
     int32_t numFrames) {
@@ -62,7 +62,7 @@ oboe::DataCallbackResult AudioEngine::CaptureCallback::onAudioReady(
     return oboe::DataCallbackResult::Continue;
 }
 
-void AudioEngine::CaptureCallback::onErrorBeforeClose(
+void CaptureCallback::onErrorBeforeClose(
     oboe::AudioStream* stream,
     oboe::Result error) {
 

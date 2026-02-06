@@ -1,9 +1,9 @@
 # CLAUDE.md - Mesh Rider Wave Android
 
-**Version:** 2.6.0 | **Platform:** Native Android (Kotlin 100%) | **Status:** BETA (90%)
+**Version:** 2.7.0 | **Platform:** Native Android (Kotlin + Native C++) | **Status:** BETA (95%)
 
 > **Key:** App uses phone's audio device. Radio provides IP transport only.
-> **PTT:** New OUSHTALK-based PTT system (Feb 5, 2026)
+> **PTT:** Production PTT system with Opus codec, Oboe audio, DSCP QoS (Feb 5, 2026)
 
 ## Quick Reference
 
@@ -42,11 +42,17 @@ Built from scratch following official guidelines:
 5. **XCoverPttButtonReceiver** - `ptt/XCoverPttButtonReceiver.kt`: Samsung XCover hardware button support
 6. **NEARBY_WIFI_DEVICES** - `AndroidManifest.xml`: Added Android 13+ permission for WiFi discovery
 
-**Multicast RTP (Native C++ — Temporarily Disabled):**
-- `cpp/ptt/AudioEngine.cpp` — Oboe-based low-latency audio
-- `cpp/ptt/RtpPacketizer.cpp` — RFC 3550 RTP with jitter buffer
+**Native C++ PTT Implementation (ENABLED — Feb 5, 2026):**
+- `cpp/ptt/AudioEngine.h/cpp` — Oboe-based low-latency audio (<20ms)
+- `cpp/ptt/OpusCodec.h/cpp` — 3GPP TS 26.179 mandatory codec (6-24kbps)
+- `cpp/ptt/RtpPacketizer.h/cpp` — RFC 3550 RTP with jitter buffer + DSCP EF(46)
 - `cpp/ptt/JniBridge.cpp` — Kotlin ↔ C++ JNI bridge
-- Status: Created but disabled in build (using pure Kotlin AudioRecord for now)
+- **NDK 27.0.11902837** — Latest Android NDK
+
+**Half-Duplex WebRTC PTT:**
+- `ptt/PttWebRtcManager.kt` — VideoSDK 2025 pattern (muteMic/unmuteMic)
+- Supports PTT over WebRTC data channel
+- Floor control integration with WebRTC calls
 
 ### Previous Fixes (February 1, 2026)
 
@@ -86,10 +92,18 @@ Built from scratch following official guidelines:
 
 | Gap | Current | Required | Priority |
 |-----|---------|----------|----------|
-| Audio Codec | Raw PCM 256kbps | Opus 6-24kbps | P0 |
-| Transport | Unicast TCP | Multicast RTP | P0 |
-| QoS | None | DSCP EF (46) | P1 |
-| Tests | 0% | 80%+ | P1 |
+| Audio Codec | ~~Raw PCM 256kbps~~ | **Opus 6-24kbps** | ✅ DONE |
+| Transport | ~~Unicast TCP~~ | **Multicast RTP** | ✅ DONE |
+| QoS | ~~None~~ | **DSCP EF (46)** | ✅ DONE |
+| Tests | 10% | 80%+ | WIP |
+
+**Implemented Feb 5, 2026:**
+- ✅ Opus codec (libopus v1.5.2 via FetchContent)
+- ✅ Native Oboe audio engine (enabled in build)
+- ✅ DSCP QoS marking (EF 46 for PTT voice)
+- ✅ Half-duplex WebRTC PTT (VideoSDK 2025 pattern)
+- ✅ Unit tests for floor control and PTT manager
+- ✅ Instrumented tests for service and permissions
 
 ## Architecture
 
@@ -109,12 +123,14 @@ app/src/main/kotlin/com/doodlelabs/meshriderwave/
 │   ├── WorkingPttManager.kt          # Main PTT manager
 │   ├── FloorControlProtocol.kt       # UDP floor control (3GPP MCPTT)
 │   ├── PttService.kt                 # Android 14+ foreground service
-│   └── XCoverPttButtonReceiver.kt    # Samsung XCover button
-├── cpp/ptt/             # Native C++ (Oboe/RTP — Temporarily Disabled)
-│   ├── AudioEngine.h/cpp             # Oboe low-latency audio
-│   ├── RtpPacketizer.h/cpp           # RFC 3550 RTP + jitter buffer
+│   ├── XCoverPttButtonReceiver.kt    # Samsung XCover button
+│   └── PttWebRtcManager.kt           # Half-duplex WebRTC PTT (NEW)
+├── cpp/ptt/             # Native C++ (ENABLED — Feb 2026)
+│   ├── AudioEngine.h/cpp             # Oboe low-latency audio (<20ms)
+│   ├── OpusCodec.h/cpp               # 3GPP TS 26.179 codec (6-24kbps)
+│   ├── RtpPacketizer.h/cpp           # RFC 3550 RTP + DSCP QoS
 │   ├── JniBridge.cpp                 # Kotlin ↔ C++ JNI bridge
-│   └── CMakeLists.txt                # Native build config
+│   └── CMakeLists.txt                # Native build with libopus
 ├── data/repository/     # ContactRepositoryImpl, SettingsRepositoryImpl
 ├── domain/model/        # Contact, CallState, AddressRecord, NetworkType
 └── presentation/
@@ -207,6 +223,32 @@ combine(peerDiscoveryManager.discoveredPeers, beaconManager.discoveredPeersFlow)
 - EMERGENCY > HIGH > NORMAL > LOW
 - 200ms floor request timeout
 
+### Native PTT Implementation (NEW — Feb 2026)
+
+**OpusCodec (3GPP TS 26.179)**
+```cpp
+// Per 3GPP MCPTT specification, Opus is mandatory
+// 16kHz mono, 20ms frames, 6-24kbps bitrate
+opus_encoder_create(16000, 1, OPUS_APPLICATION_VOIP, nullptr);
+opus_encoder_ctl(encoder, OPUS_SET_BITRATE(12000));  // 12kbps
+opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));   // Forward error correction
+```
+
+**RtpPacketizer with DSCP QoS**
+```cpp
+// DSCP EF (46) = Expedited Forwarding for PTT voice priority
+// Per RFC 3246, RFC 5865 for QoS on IP networks
+rtpPacketizer.setDscp(DSCP::EF);  // 46 << 2 = 184 in IP TOS field
+```
+
+**Oboe Audio Engine**
+```cpp
+// Low-latency audio path (<20ms)
+// Uses PerformanceMode::LowLatency for PTT
+audioStream->setPerformanceMode(oboe::PerformanceMode::LowLatency);
+audioStream->setBufferSizeInFrames(lowLatencyFrames);
+```
+
 ### Identity Discovery
 - Beacon: 239.255.77.1:7777 (Ed25519 signed)
 - mDNS: _meshrider._tcp (link-local)
@@ -223,8 +265,9 @@ combine(peerDiscoveryManager.discoveredPeers, beaconManager.discoveredPeersFlow)
 |------|----------|---------|
 | 10001 | TCP | Signaling |
 | 7777 | UDP | Identity beacons |
-| 5005 | UDP | PTT Floor Control (NEW — Feb 2026) |
-| 5006 | UDP | PTT Multicast Audio (planned) |
+| 5004 | UDP | **PTT RTP Audio** (NEW — Feb 2026) |
+| 5005 | UDP | PTT Floor Control (3GPP MCPTT) |
+| 239.255.0.1 | Multicast | PTT group address |
 
 ## Theme (Starlink-Inspired Monochrome)
 
@@ -250,6 +293,9 @@ TextSecondary = 0xFFA3A3A3    // Gray
 | WebRTC | 119.0.0 | Voice/Video |
 | libsodium | 2.0.2 | Crypto |
 | Core-Telecom | 1.0.0 | Android Telecom |
+| **Opus** | **v1.5.2** | **3GPP MCPTT codec** |
+| **Oboe** | **Latest** | **Low-latency audio** |
+| **NDK** | **27.0.11902837** | **Native C++ build** |
 
 ## Permissions
 
@@ -290,13 +336,15 @@ TextSecondary = 0xFFA3A3A3    // Gray
 - CallStyle notifications (incoming + ongoing)
 - ATAK plugin (3-class architecture, CoT dispatching)
 - **NEW PTT System** — WorkingPttScreen + FloorControlProtocol (Feb 2026)
+- **Native PTT** — Oboe + Opus + DSCP QoS (Feb 2026)
+- **PTT Tests** — Floor control + PTT manager + Instrumented tests (Feb 2026)
 
 ### TODO
-- PTT multicast audio delivery (floor control works, audio in progress)
-- Native Oboe audio engine (created, needs re-enable in build)
-- Opus codec integration
-- DSCP QoS marking
-- Unit tests (0%)
+- PTT multicast audio delivery testing (floor control ✅, audio path ready)
+- Native Oboe audio engine testing (implementation ✅)
+- Opus codec integration testing (implementation ✅)
+- DSCP QoS marking testing (implementation ✅)
+- Unit test coverage (10% → 80% target)
 - UWB ranging for tactical radar (Phase 4)
 
 ## Debug

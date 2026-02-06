@@ -35,6 +35,7 @@ import com.doodlelabs.meshriderwave.core.discovery.ContactAddressSync
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
+import com.doodlelabs.meshriderwave.core.util.logW
 import com.doodlelabs.meshriderwave.core.ptt.PTTManager
 import com.doodlelabs.meshriderwave.core.telecom.CallNotificationManager
 import com.doodlelabs.meshriderwave.core.telecom.TelecomCallManager
@@ -46,6 +47,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -84,6 +87,11 @@ class MeshService : Service() {
     private val binder = MeshBinder()
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    // RACE CONDITION FIX Feb 2026: Track service lifecycle state atomically
+    private val serviceStateLock = Mutex()
+    @Volatile
+    private var isServiceDestroyed = false
+
     // Feb 2026 CRITICAL: WiFi MulticastLock — without this, Android discards
     // all multicast packets to save battery. Required for PTT beacon discovery
     // AND multicast RTP audio. Every PTT app (Zello, VoicePing) needs this.
@@ -117,6 +125,11 @@ class MeshService : Service() {
 
     override fun onDestroy() {
         logD("onDestroy()")
+        scope.launch {
+            serviceStateLock.withLock {
+                isServiceDestroyed = true
+            }
+        }
         stopListening()
         scope.cancel()
         super.onDestroy()
@@ -224,11 +237,22 @@ class MeshService : Service() {
 
     private var isListening = false
 
+    /**
+     * Start listening for incoming connections and peer discovery
+     * RACE CONDITION FIX Feb 2026: Check if service is destroyed before starting
+     */
     private fun startListening() {
         if (isListening) {
             logI("startListening() already listening, skipping")
             return
         }
+
+        // Check if service is being destroyed (volatile read, no mutex needed)
+        if (isServiceDestroyed) {
+            logW("startListening() service is destroyed, skipping")
+            return
+        }
+
         isListening = true
         logI("startListening()")
 
@@ -282,8 +306,11 @@ class MeshService : Service() {
         // Observe incoming calls
         scope.launch {
             meshNetworkManager.incomingCalls.collect { incomingCall ->
-                logI("Incoming call from ${incomingCall.remoteAddress}")
-                handleIncomingCall(incomingCall)
+                // RACE CONDITION FIX: Don't handle calls if service is destroyed
+                if (!serviceStateLock.withLock { isServiceDestroyed }) {
+                    logI("Incoming call from ${incomingCall.remoteAddress}")
+                    handleIncomingCall(incomingCall)
+                }
             }
         }
 
@@ -300,23 +327,26 @@ class MeshService : Service() {
                 beaconPeers.forEach { (key, _) -> allPeers[key] = Unit }
                 allPeers.size to (mdnsPeers.values.toList() to beaconPeers.values.toList())
             }.collect { (totalPeers, peers) ->
-                val (mdnsPeers, _) = peers
-                logD("Total peers: $totalPeers (mDNS: ${mdnsPeers.size})")
+                // RACE CONDITION FIX: Don't update if service is destroyed
+                if (!serviceStateLock.withLock { isServiceDestroyed }) {
+                    val (mdnsPeers, _) = peers
+                    logD("Total peers: $totalPeers (mDNS: ${mdnsPeers.size})")
 
-                // Update notification with combined peer count
-                updateNotification(totalPeers)
+                    // Update notification with combined peer count
+                    updateNotification(totalPeers)
 
-                // Register mDNS peer addresses with PTTManager
-                mdnsPeers.forEach { peer ->
-                    try {
-                        peer.primaryAddress?.let { address ->
-                            pttManager.registerMemberAddress(
-                                peer.publicKey,
-                                listOf(address)
-                            )
+                    // Register mDNS peer addresses with PTTManager
+                    mdnsPeers.forEach { peer ->
+                        try {
+                            peer.primaryAddress?.let { address ->
+                                pttManager.registerMemberAddress(
+                                    peer.publicKey,
+                                    listOf(address)
+                                )
+                            }
+                        } catch (e: Exception) {
+                            // Peer may not be in a PTT channel
                         }
-                    } catch (e: Exception) {
-                        // Peer may not be in a PTT channel
                     }
                 }
             }
@@ -325,13 +355,16 @@ class MeshService : Service() {
         // Register beacon peer addresses with PTTManager
         scope.launch {
             beaconManager.peerDiscoveredEvent.collect { peer ->
-                try {
-                    pttManager.registerMemberAddress(
-                        peer.publicKey,
-                        listOf(peer.address)
-                    )
-                } catch (e: Exception) {
-                    // Peer may not be in a PTT channel
+                // RACE CONDITION FIX: Don't register if service is destroyed
+                if (!serviceStateLock.withLock { isServiceDestroyed }) {
+                    try {
+                        pttManager.registerMemberAddress(
+                            peer.publicKey,
+                            listOf(peer.address)
+                        )
+                    } catch (e: Exception) {
+                        // Peer may not be in a PTT channel
+                    }
                 }
             }
         }
@@ -339,8 +372,11 @@ class MeshService : Service() {
         // Observe PTT messages and route to PTTManager
         scope.launch {
             meshNetworkManager.pttMessages.collect { pttMessage ->
-                logD("PTT message received: ${pttMessage.type}")
-                handlePTTMessage(pttMessage)
+                // RACE CONDITION FIX: Don't handle if service is destroyed
+                if (!serviceStateLock.withLock { isServiceDestroyed }) {
+                    logD("PTT message received: ${pttMessage.type}")
+                    handlePTTMessage(pttMessage)
+                }
             }
         }
     }
@@ -446,6 +482,10 @@ class MeshService : Service() {
         multicastLock = null
     }
 
+    /**
+     * Handle incoming call
+     * RACE CONDITION FIX Feb 2026: Check service state before handling
+     */
     private fun handleIncomingCall(call: MeshNetworkManager.IncomingCall) {
         // Store socket in static holder for CallActivity to retrieve
         setPendingCallSocket(call.socket)
@@ -462,6 +502,12 @@ class MeshService : Service() {
         // Per developer.android.com: must post notification within 5 seconds of addCall()
         scope.launch {
             try {
+                // RACE CONDITION FIX: Check service is still alive
+                if (serviceStateLock.withLock { isServiceDestroyed }) {
+                    logW("handleIncomingCall: service destroyed, skipping Telecom registration")
+                    return@launch
+                }
+
                 telecomCallManager.addIncomingCall(
                     displayName = callerName,
                     address = call.remoteAddress ?: "unknown",
@@ -496,14 +542,18 @@ class MeshService : Service() {
         )
 
         // Launch CallActivity for incoming call
-        val intent = Intent(this, CallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(CallActivity.EXTRA_IS_OUTGOING, false)
-            putExtra(CallActivity.EXTRA_REMOTE_ADDRESS, call.remoteAddress)
-            putExtra(CallActivity.EXTRA_OFFER, call.offer)
-            putExtra(CallActivity.EXTRA_SENDER_KEY, senderKeyBase64)
+        try {
+            val intent = Intent(this, CallActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(CallActivity.EXTRA_IS_OUTGOING, false)
+                putExtra(CallActivity.EXTRA_REMOTE_ADDRESS, call.remoteAddress)
+                putExtra(CallActivity.EXTRA_OFFER, call.offer)
+                putExtra(CallActivity.EXTRA_SENDER_KEY, senderKeyBase64)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            logE("Failed to launch CallActivity", e)
         }
-        startActivity(intent)
     }
 
     inner class MeshBinder : Binder() {

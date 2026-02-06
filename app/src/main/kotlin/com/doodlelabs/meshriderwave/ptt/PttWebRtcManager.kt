@@ -16,6 +16,8 @@ import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
 import com.doodlelabs.meshriderwave.core.util.logW
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,7 +83,7 @@ class PttWebRtcManager(private val context: Context) {
      * Creates one-way audio stream for PTT (receive-only until PTT pressed)
      */
     fun initialize(myId: String): Boolean {
-        logI(TAG, "Initializing PTT WebRTC for $myId")
+        logI("Initializing PTT WebRTC for $myId")
         ownId = myId
 
         // Create voice-only WebRTC call
@@ -93,7 +95,7 @@ class PttWebRtcManager(private val context: Context) {
         // Start with microphone MUTED (receive-only mode)
         rtcCall?.setMicrophoneEnabled(false)
 
-        logI(TAG, "PTT WebRTC initialized successfully")
+        logI("PTT WebRTC initialized successfully")
         return true
     }
 
@@ -104,12 +106,12 @@ class PttWebRtcManager(private val context: Context) {
      * This is equivalent to VideoSDK's unmuteMic() method
      */
     fun startPtt(): Boolean {
-        logI(TAG, "startPtt() - Requesting floor")
+        logI("startPtt() - Requesting floor")
 
         // Check if floor is already taken by someone else
         val currentOwner = _floorOwner.value
         if (currentOwner != null && currentOwner != ownId) {
-            logW(TAG, "Floor denied: $currentOwner has floor")
+            logW("Floor denied: $currentOwner has floor")
             onFloorDenied?.invoke(currentOwner)
             return false
         }
@@ -122,15 +124,15 @@ class PttWebRtcManager(private val context: Context) {
         rtcCall?.setMicrophoneEnabled(true)
 
         _isTransmitting.value = true
-        logI(TAG, "PTT transmission started")
+        logI("PTT transmission started")
 
         onFloorGranted?.invoke()
 
         // Auto-stop after max duration (3GPP MCPTT requirement)
         scope.launch {
-            kotlinx.coroutines.delay(MAX_PTT_DURATION_MS)
+            delay(MAX_PTT_DURATION_MS)
             if (_isTransmitting.value) {
-                logW(TAG, "Auto-stopping PTT after ${MAX_PTT_DURATION_MS}ms")
+                logW("Auto-stopping PTT after ${MAX_PTT_DURATION_MS}ms")
                 stopPtt()
             }
         }
@@ -145,7 +147,7 @@ class PttWebRtcManager(private val context: Context) {
      * This is equivalent to VideoSDK's muteMic() method
      */
     fun stopPtt() {
-        logI(TAG, "stopPtt() - Releasing floor")
+        logI("stopPtt() - Releasing floor")
 
         _isPttPressed.value = false
         _floorOwner.value = null
@@ -154,7 +156,7 @@ class PttWebRtcManager(private val context: Context) {
         rtcCall?.setMicrophoneEnabled(false)
 
         _isTransmitting.value = false
-        logI(TAG, "PTT transmission stopped")
+        logI("PTT transmission stopped")
 
         onFloorReleased?.invoke()
     }
@@ -164,7 +166,7 @@ class PttWebRtcManager(private val context: Context) {
      * Called when someone else starts/stops transmitting
      */
     fun onRemotePttStart(peerId: String) {
-        logI(TAG, "Remote PTT start: $peerId")
+        logI("Remote PTT start: $peerId")
 
         // If we're not transmitting, let them have the floor
         if (!_isTransmitting.value) {
@@ -174,7 +176,7 @@ class PttWebRtcManager(private val context: Context) {
     }
 
     fun onRemotePttStop(peerId: String) {
-        logI(TAG, "Remote PTT stop: $peerId")
+        logI("Remote PTT stop: $peerId")
 
         if (_floorOwner.value == peerId) {
             _floorOwner.value = null
@@ -186,7 +188,7 @@ class PttWebRtcManager(private val context: Context) {
      * Create peer connection for PTT session
      */
     fun createPeerConnection(offer: String? = null) {
-        logD(TAG, "createPeerConnection()")
+        logD("createPeerConnection()")
         rtcCall?.createPeerConnection(offer)
     }
 
@@ -194,7 +196,7 @@ class PttWebRtcManager(private val context: Context) {
      * Handle remote SDP offer/answer
      */
     fun handleRemoteSdp(sdp: String, type: String) {
-        logD(TAG, "handleRemoteSdp() type=$type")
+        logD("handleRemoteSdp() type=$type")
         when (type) {
             "offer" -> {
                 // For incoming PTT calls, handle as answer
@@ -217,7 +219,7 @@ class PttWebRtcManager(private val context: Context) {
      * Enable/disable speaker for PTT audio output
      */
     fun setSpeakerEnabled(enabled: Boolean) {
-        logD(TAG, "setSpeakerEnabled($enabled)")
+        logD("setSpeakerEnabled($enabled)")
         rtcCall?.setSpeakerEnabled(enabled)
     }
 
@@ -240,7 +242,7 @@ class PttWebRtcManager(private val context: Context) {
      * Cleanup PTT WebRTC resources
      */
     fun cleanup() {
-        logI(TAG, "Cleaning up PTT WebRTC")
+        logI("Cleaning up PTT WebRTC")
 
         stopPtt()
         rtcCall?.cleanup()

@@ -138,6 +138,10 @@ class MainActivity : ComponentActivity() {
                             },
                             onStartVideoCallToPeer = { publicKey, ipAddress, name ->
                                 startDirectPeerCall(publicKey, ipAddress, name, isVideoCall = true)
+                            },
+                            // SOS activation (Feb 2026) - navigate to Map for SOS activation
+                            onActivateSOS = {
+                                navController.navigate("map")
                             }
                         )
                     }

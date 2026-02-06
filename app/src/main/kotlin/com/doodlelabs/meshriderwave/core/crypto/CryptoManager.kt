@@ -262,14 +262,17 @@ class CryptoManager @Inject constructor() {
         val channelBytes = channelId.toByteArray(Charsets.UTF_8)
 
         if (masterKey != null && masterKey.size == SecretBox.KEYBYTES) {
-            // Keyed hash for better security
+            val context = "MeshRiderChannel".toByteArray(Charsets.UTF_8)
+            val salt = ByteArray(channelBytes.size + context.size)
+            System.arraycopy(channelBytes, 0, salt, 0, channelBytes.size)
+            System.arraycopy(context, 0, salt, channelBytes.size, context.size)
+
             sodium.crypto_generichash(
                 key, key.size,
-                channelBytes, channelBytes.size.toLong(),
+                salt, salt.size.toLong(),
                 masterKey, masterKey.size
             )
         } else {
-            // Unkeyed hash (less secure, for development)
             sodium.crypto_generichash(
                 key, key.size,
                 channelBytes, channelBytes.size.toLong(),

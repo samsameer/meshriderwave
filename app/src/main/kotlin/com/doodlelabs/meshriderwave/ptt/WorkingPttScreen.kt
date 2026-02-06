@@ -34,10 +34,14 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.doodlelabs.meshriderwave.presentation.ui.theme.PremiumColors
 import kotlinx.coroutines.launch
 
 /**
@@ -91,12 +95,12 @@ fun WorkingPttScreen(
 
     // Color states (high contrast for outdoor visibility)
     val buttonColor = when {
-        isTransmitting -> Color(0xFFDC2626)  // Red (transmitting)
-        isPressing -> Color(0xFFFF9800)       // Orange (connecting)
-        else -> Color(0xFF00B4D8)           // Cyan (ready)
+        isTransmitting -> PremiumColors.CriticalRed
+        isPressing -> PremiumColors.SolarGold
+        else -> PremiumColors.ElectricCyan
     }
 
-    val backgroundColor = Color(0xFF000000)  // Pure black background
+    val backgroundColor = PremiumColors.DeepSpace
 
     Box(
         modifier = modifier
@@ -121,7 +125,7 @@ fun WorkingPttScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = Color.White
+                        tint = PremiumColors.TextPrimary
                     )
                 }
 
@@ -129,15 +133,14 @@ fun WorkingPttScreen(
                     text = "PUSH TO TALK",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = PremiumColors.TextPrimary
                 )
 
-                // Latency display
                 if (latency.value > 0) {
                     Text(
                         text = "${latency.value}ms",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF00B4D8)
+                        color = PremiumColors.ElectricCyan
                     )
                 } else {
                     Spacer(modifier = Modifier.width(48.dp))
@@ -153,14 +156,14 @@ fun WorkingPttScreen(
                     Icon(
                         imageVector = Icons.Default.VolumeUp,
                         contentDescription = null,
-                        tint = Color(0xFF00B4D8),
+                        tint = PremiumColors.ElectricCyan,
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
                         text = currentSpeaker ?: "",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF00B4D8)
+                        color = PremiumColors.ElectricCyan
                     )
                 }
             }
@@ -168,13 +171,14 @@ fun WorkingPttScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             // ===== PTT BUTTON =====
-            // Following Samsung Knox UI guidelines:
-            // - Minimum 48dp touch target
-            // - High contrast for outdoor visibility
+            val pttContentDescription = if (isTransmitting) "Transmitting audio. Release to stop." else "Push to talk button. Tap to transmit."
             Box(
                 modifier = Modifier
                     .size(200.dp)
-                    .scale(buttonScale),
+                    .scale(buttonScale)
+                    .semantics {
+                        contentDescription = pttContentDescription
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 // Pulsing ring when transmitting
@@ -205,7 +209,7 @@ fun WorkingPttScreen(
                         )
                         .border(
                             width = 4.dp,
-                            color = Color.White,
+                            color = PremiumColors.TextPrimary,
                             shape = CircleShape
                         )
                         .pointerInput(Unit) {
@@ -245,7 +249,7 @@ fun WorkingPttScreen(
                         },
                         contentDescription = "Push to Talk",
                         modifier = Modifier.size(64.dp),
-                        tint = Color.White
+                        tint = PremiumColors.TextPrimary
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -260,7 +264,7 @@ fun WorkingPttScreen(
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = PremiumColors.TextPrimary,
                         letterSpacing = 2.sp
                     )
                 }
@@ -279,10 +283,10 @@ fun WorkingPttScreen(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = when {
-                    isTransmitting -> Color(0xFFDC2626)  // Red
-                    isPressing -> Color(0xFFFF9800)      // Orange
-                    currentSpeaker != null -> Color(0xFFFFA500) // Amber
-                    else -> Color(0xFF00B4D8)             // Cyan
+                    isTransmitting -> PremiumColors.CriticalRed
+                    isPressing -> PremiumColors.SolarGold
+                    currentSpeaker != null -> PremiumColors.ConnectingAmber
+                    else -> PremiumColors.ElectricCyan
                 }
             )
 
@@ -294,7 +298,7 @@ fun WorkingPttScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF1A1A1A)
+                    containerColor = PremiumColors.SpaceGrayLight
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -306,7 +310,7 @@ fun WorkingPttScreen(
                         text = "HOW TO USE",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFA3A3A3)
+                        color = PremiumColors.TextSecondary
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -316,7 +320,7 @@ fun WorkingPttScreen(
                                "• Only one person at a time\n" +
                                "• Works on WiFi network",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
+                        color = PremiumColors.TextPrimary,
                         textAlign = TextAlign.Center
                     )
                 }

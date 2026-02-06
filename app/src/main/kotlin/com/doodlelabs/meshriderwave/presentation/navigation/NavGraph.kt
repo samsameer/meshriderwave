@@ -50,10 +50,12 @@ sealed class Screen(val route: String) {
 fun MeshRiderNavGraph(
     navController: NavHostController,
     onStartCall: (String) -> Unit,
-    onStartVideoCall: (String) -> Unit = onStartCall,  // Default to same handler for backwards compatibility
+    onStartVideoCall: (String) -> Unit = onStartCall,
     // Direct peer calling (Jan 2026) - for discovered peers without saved contact
     onStartCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> },
-    onStartVideoCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> }
+    onStartVideoCallToPeer: (publicKey: ByteArray, ipAddress: String, name: String) -> Unit = { _, _, _ -> },
+    // SOS activation (Feb 2026) - for Home screen SOS button
+    onActivateSOS: () -> Unit = {}
 ) {
     NavHost(
         navController = navController,
@@ -67,7 +69,8 @@ fun MeshRiderNavGraph(
                 onNavigateToMap = { navController.navigate(Screen.Map.route) },
                 onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
                 onNavigateToQRScan = { navController.navigate(Screen.QRScan.route) },
-                onStartCall = onStartCall
+                onStartCall = onStartCall,
+                onActivateSOS = onActivateSOS
             )
         }
 

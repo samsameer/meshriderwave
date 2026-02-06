@@ -38,13 +38,14 @@ else()
 endif()
 
 # PTT Audio Library
+# CRITICAL FIX: AudioEngine.cpp contains the full implementation including callbacks
+# AudioCapture.cpp and AudioPlayback.cpp are legacy files with older implementations
+# Only include AudioEngine.cpp to avoid duplicate symbol errors
 add_library(meshriderptt SHARED
     ptt/AudioEngine.cpp
-    ptt/AudioCapture.cpp
-    ptt/AudioPlayback.cpp
     ptt/JniBridge.cpp
     ptt/RtpPacketizer.cpp
-    ptt/OpusCodec.cpp  # NEW: Opus codec wrapper (Feb 2026)
+    ptt/OpusCodec.cpp
 )
 
 target_include_directories(meshriderptt PRIVATE
@@ -55,7 +56,7 @@ target_include_directories(meshriderptt PRIVATE
 target_link_libraries(meshriderptt
     PUBLIC
     oboe::oboe
-    opus::opus  # NEW: Opus codec linking (Feb 2026)
+    opus  # CRITICAL FIX: Opus target from FetchContent is "opus" not "opus::opus"
     android
     log
 )

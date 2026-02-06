@@ -10,6 +10,7 @@ package com.doodlelabs.meshriderwave.presentation.ui.screens.home
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,6 +51,7 @@ fun HomeScreen(
     onNavigateToQRScan: () -> Unit = {},
     onStartCall: (String) -> Unit,
     onStartVideoCall: (String) -> Unit = {},
+    onActivateSOS: () -> Unit = {},
     viewModel: MainViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -96,6 +99,17 @@ fun HomeScreen(
                         localAddresses = uiState.localAddresses,
                         username = uiState.username,
                         peerCount = uiState.contacts.count { /* isOnline */ true }
+                    )
+                }
+
+                // PRIMARY ACTION CARDS - Main tactical features
+                item {
+                    PrimaryActionCards(
+                        onPTT = onNavigateToChannels,
+                        onCallTeam = onNavigateToGroups,
+                        onSOS = onActivateSOS,
+                        onMap = onNavigateToMap,
+                        isServiceRunning = uiState.isServiceRunning
                     )
                 }
 
@@ -239,6 +253,165 @@ private fun PremiumStatusCard(
 
             // Encryption badge
             EncryptionBadge(isEncrypted = true)
+        }
+    }
+}
+
+/**
+ * Primary Action Cards - Main tactical features
+ * These are the most important actions for a tactical communication app
+ */
+@Composable
+private fun PrimaryActionCards(
+    onPTT: () -> Unit,
+    onCallTeam: () -> Unit,
+    onSOS: () -> Unit,
+    onMap: () -> Unit,
+    isServiceRunning: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Row 1: PTT (Primary) + Call Team
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // PTT - Primary action, larger
+            PrimaryActionCard(
+                modifier = Modifier.weight(1.5f),
+                icon = Icons.Filled.Mic,
+                title = "PUSH TO TALK",
+                subtitle = if (isServiceRunning) "Ready to transmit" else "Start service first",
+                color = PremiumColors.ElectricCyan,
+                isEnabled = isServiceRunning,
+                isPrimary = true,
+                onClick = onPTT
+            )
+            // Call Team
+            PrimaryActionCard(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Groups,
+                title = "CALL TEAM",
+                subtitle = "Group call",
+                color = PremiumColors.LaserLime,
+                isEnabled = true,
+                isPrimary = false,
+                onClick = onCallTeam
+            )
+        }
+        // Row 2: SOS + Map
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // SOS - Emergency
+            PrimaryActionCard(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Warning,
+                title = "SOS",
+                subtitle = "Emergency alert",
+                color = PremiumColors.CriticalRed,
+                isEnabled = true,
+                isPrimary = false,
+                onClick = onSOS
+            )
+            // Map - Situational awareness
+            PrimaryActionCard(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Map,
+                title = "MAP",
+                subtitle = "Team tracking",
+                color = PremiumColors.HoloPurple,
+                isEnabled = true,
+                isPrimary = false,
+                onClick = onMap
+            )
+        }
+    }
+}
+
+/**
+ * Primary Action Card - High visibility button for main features
+ */
+@Composable
+private fun PrimaryActionCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    color: Color,
+    isEnabled: Boolean,
+    isPrimary: Boolean,
+    onClick: () -> Unit
+) {
+    val cardHeight = if (isPrimary) 90.dp else 70.dp
+    val iconSize = if (isPrimary) 28.dp else 24.dp
+    val titleFontSize = if (isPrimary) 14.sp else 12.sp
+
+    Box(
+        modifier = modifier
+            .height(cardHeight)
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (isEnabled) {
+                    color.copy(alpha = 0.15f)
+                } else {
+                    PremiumColors.SpaceGrayLight
+                }
+            )
+            .border(
+                width = if (isPrimary) 2.dp else 1.dp,
+                color = if (isEnabled) {
+                    color.copy(alpha = 0.5f)
+                } else {
+                    PremiumColors.SpaceGrayLighter
+                },
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clickable(enabled = isEnabled, onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (isPrimary) 48.dp else 40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isEnabled) color.copy(alpha = 0.2f)
+                        else PremiumColors.SpaceGrayLighter
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    modifier = Modifier.size(iconSize),
+                    tint = if (isEnabled) color else PremiumColors.TextSecondary
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    color = if (isEnabled) PremiumColors.TextPrimary else PremiumColors.TextSecondary,
+                    fontSize = titleFontSize,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isEnabled) color.copy(alpha = 0.8f) else PremiumColors.TextTertiary,
+                    fontSize = 10.sp
+                )
+            }
         }
     }
 }

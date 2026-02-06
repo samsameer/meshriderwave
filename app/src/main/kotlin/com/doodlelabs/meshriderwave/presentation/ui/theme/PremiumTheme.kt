@@ -56,13 +56,14 @@ object PremiumColors {
 
     // Status Colors
     val OnlineGlow = Color(0xFF00FF88)
-    val OfflineGray = Color(0xFF4A4A4A)
+    val OfflineGray = Color(0xFF6A6A6A)
     val BusyRed = Color(0xFFFF3366)
+    val CriticalRed = Color(0xFFDC2626)
     val ConnectingAmber = Color(0xFFFFAA00)
 
     // Premium Accent Colors (New)
-    val AuroraGreen = Color(0xFF00FF88)  // Alias for OnlineGlow
-    val SolarGold = Color(0xFFFFB800)    // Warm gold for warnings/PTT
+    val AuroraGreen = Color(0xFF00FF88)
+    val SolarGold = Color(0xFFFFB800)
 
     // Surface Colors - Deep Space
     val DeepSpace = Color(0xFF0A0A0F)
@@ -71,14 +72,19 @@ object PremiumColors {
     val SpaceGrayLighter = Color(0xFF22222E)
 
     // Glass Colors
-    val GlassWhite = Color(0x1AFFFFFF) // 10% white
-    val GlassBorder = Color(0x33FFFFFF) // 20% white
-    val GlassDark = Color(0x0DFFFFFF) // 5% white
+    val GlassWhite = Color(0x33FFFFFF)
+    val GlassBorder = Color(0x4DFFFFFF)
+    val GlassDark = Color(0x0DFFFFFF)
 
     // Text
     val TextPrimary = Color(0xFFF5F5F7)
     val TextSecondary = Color(0xFFB0B0B8)
-    val TextTertiary = Color(0xFF707078)
+    val TextTertiary = Color(0xFF95959D)
+
+    // Tactical Colors (for Dashboard consistency)
+    val TacticalAccent = ElectricCyan
+    val TacticalBackground = DeepSpace
+    val TacticalSurface = SpaceGray
 
     // Gradients
     val PrimaryGradient = Brush.linearGradient(

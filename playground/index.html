@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeshRider Wave - Project Showcase</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #050505;
+            --bg-card: #0a0a0a;
+            --bg-elevated: #111111;
+            --accent: #00B4D8;
+            --accent-glow: rgba(0, 180, 216, 0.3);
+            --text: #ffffff;
+            --text-muted: #666666;
+            --border: #1a1a1a;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(0, 180, 216, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 180, 216, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 100px 0;
+        }
+
+        .hero-content {
+            max-width: 900px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--accent-glow);
+            border: 1px solid var(--accent);
+            padding: 8px 20px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 32px;
+        }
+
+        .badge-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        h1 {
+            font-size: clamp(48px, 8vw, 96px);
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1;
+            margin-bottom: 24px;
+        }
+
+        h1 .gradient {
+            background: linear-gradient(135deg, var(--accent) 0%, #48CAE4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            font-size: clamp(18px, 2vw, 24px);
+            color: var(--text-muted);
+            font-weight: 300;
+            max-width: 600px;
+            margin: 0 auto 48px;
+        }
+
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-top: 4px;
+        }
+
+        /* Section Styles */
+        section {
+            padding: 120px 0;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .section-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--accent);
+            margin-bottom: 16px;
+        }
+
+        h2 {
+            font-size: clamp(32px, 5vw, 48px);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .section-desc {
+            font-size: 18px;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 24px auto 0;
+        }
+
+        /* Feature Cards */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 40px var(--accent-glow);
+            transform: translateY(-4px);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--accent-glow);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .feature-card h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .feature-tag {
+            display: inline-block;
+            background: var(--bg-elevated);
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--accent);
+            margin-top: 16px;
+        }
+
+        /* Marquee Section */
+        .marquee-section {
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            overflow: hidden;
+            padding: 80px 0;
+        }
+
+        .marquee-track {
+            display: flex;
+            animation: scroll 30s linear infinite;
+        }
+
+        @keyframes scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .marquee-item {
+            flex-shrink: 0;
+            padding: 0 60px;
+            font-size: 48px;
+            font-weight: 700;
+            color: var(--text-muted);
+            opacity: 0.3;
+            white-space: nowrap;
+        }
+
+        .marquee-item.highlight {
+            color: var(--accent);
+            opacity: 1;
+        }
+
+        /* Architecture Diagram */
+        .arch-diagram {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 40px;
+        }
+
+        .arch-layer {
+            text-align: center;
+        }
+
+        .arch-layer-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .arch-box {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 16px;
+            margin-bottom: 12px;
+        }
+
+        .arch-box:last-child {
+            margin-bottom: 0;
+        }
+
+        .arch-box h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .arch-box p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Tech Stack */
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .tech-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .tech-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .tech-version {
+            font-size: 13px;
+            color: var(--accent);
+        }
+
+        .tech-use {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        /* Status Cards */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .status-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+        }
+
+        .status-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .status-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .status-indicator.done { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .status-indicator.wip { background: var(--warning); box-shadow: 0 0 10px var(--warning); }
+        .status-indicator.todo { background: var(--danger); }
+
+        .status-items {
+            list-style: none;
+        }
+
+        .status-items li {
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .status-items li:last-child {
+            border-bottom: none;
+        }
+
+        .status-items li::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 10px;
+            background: var(--success);
+        }
+
+        /* ATAK Section */
+        .atak-section {
+            background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
+            border-top: 1px solid var(--border);
+        }
+
+        .atak-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: center;
+        }
+
+        .atak-info h3 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        .atak-info p {
+            color: var(--text-muted);
+            line-height: 1.8;
+            margin-bottom: 24px;
+        }
+
+        .atak-features {
+            list-style: none;
+        }
+
+        .atak-features li {
+            padding: 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .atak-features li:last-child {
+            border-bottom: none;
+        }
+
+        .atak-features li::before {
+            content: '✓';
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .atak-diagram {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        .atak-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .atak-flow-step {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .atak-step-number {
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .atak-step-text {
+            font-size: 14px;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 60px 0;
+            text-align: center;
+        }
+
+        .footer-logo {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .footer-logo span {
+            color: var(--accent);
+        }
+
+        .footer-info {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .footer-meta {
+            margin-top: 24px;
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero-stats {
+                gap: 24px;
+            }
+
+            .arch-diagram {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .atak-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .marquee-item {
+                font-size: 32px;
+                padding: 0 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container hero-content">
+            <div class="badge">
+                <span class="badge-dot"></span>
+                v2.7.0 BETA — February 2026
+            </div>
+            <h1>MeshRider <span class="gradient">Wave</span></h1>
+            <p class="tagline">
+                Tactical communications platform for mission-critical scenarios.
+                Military-grade PTT with 3GPP MCPTT standards and ATAK integration.
+            </p>
+            <div class="hero-stats">
+                <div class="stat">
+                    <div class="stat-value">&lt;20ms</div>
+                    <div class="stat-label">Audio Latency</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">12kbps</div>
+                    <div class="stat-label">Opus Bitrate</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">EF 46</div>
+                    <div class="stat-label">DSCP Priority</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">100%</div>
+                    <div class="stat-label">Kotlin Native</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Marquee -->
+    <div class="marquee-section">
+        <div class="marquee-track">
+            <span class="marquee-item">PUSH-TO-TALK</span>
+            <span class="marquee-item highlight">MCPTT</span>
+            <span class="marquee-item">FLOOR CONTROL</span>
+            <span class="marquee-item highlight">OPUS CODEC</span>
+            <span class="marquee-item">OBOE AUDIO</span>
+            <span class="marquee-item highlight">DSCP QOS</span>
+            <span class="marquee-item">ATAK PLUGIN</span>
+            <span class="marquee-item highlight">COT PROTOCOL</span>
+            <span class="marquee-item">BLUE FORCE</span>
+            <span class="marquee-item highlight">WEBRTC</span>
+            <span class="marquee-item">E2E ENCRYPTED</span>
+            <span class="marquee-item highlight">MILITARY GRADE</span>
+            <span class="marquee-item">PUSH-TO-TALK</span>
+            <span class="marquee-item highlight">MCPTT</span>
+            <span class="marquee-item">FLOOR CONTROL</span>
+            <span class="marquee-item highlight">OPUS CODEC</span>
+            <span class="marquee-item">OBOE AUDIO</span>
+            <span class="marquee-item highlight">DSCP QOS</span>
+            <span class="marquee-item">ATAK PLUGIN</span>
+            <span class="marquee-item highlight">COT PROTOCOL</span>
+            <span class="marquee-item">BLUE FORCE</span>
+            <span class="marquee-item highlight">WEBRTC</span>
+            <span class="marquee-item">E2E ENCRYPTED</span>
+            <span class="marquee-item highlight">MILITARY GRADE</span>
+        </div>
+    </div>
+
+    <!-- Features Section -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">Capabilities</div>
+                <h2>What MeshRider Wave Does</h2>
+                <p class="section-desc">
+                    A comprehensive tactical communication system built from first principles
+                    using official Android, Samsung, and Kotlin developer guidelines.
+                </p>
+            </div>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎙️</div>
+                    <h3>Push-to-Talk</h3>
+                    <p>
+                        Half-duplex PTT with 3GPP MCPTT floor control arbitration.
+                        Only one user transmits at a time with priority preemption support.
+                    </p>
+                    <span class="feature-tag">200ms Floor Timeout</span>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔊</div>
+                    <h3>Low-Latency Audio</h3>
+                    <p>
+                        Native Oboe audio engine delivers &lt;20ms latency.
+                        Opus codec reduces bandwidth from 256kbps to 12kbps.
+                    </p>
+                    <span class="feature-tag">3GPP TS 26.179</span>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">📡</div>
+                    <h3>Mesh Networking</h3>
+                    <p>
+                        Peer discovery via mDNS and UDP beacons.
+                        Multicast RTP transport with DSCP QoS marking for priority handling.
+                    </p>
+                    <span class="feature-tag">RFC 3550 RTP</span>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">📱</div>
+                    <h3>Samsung Integration</h3>
+                    <p>
+                        Native XCover button support via Knox SDK.
+                        Hardware PTT with haptic feedback for tactical use.
+                    </p>
+                    <span class="feature-tag">developer.samsung.com</span>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🗺️</div>
+                    <h3>ATAK Plugin</h3>
+                    <p>
+                        Full Android Team Awareness Kit integration with CoT protocol.
+                        Blue Force Tracking with real-time position sharing.
+                    </p>
+                    <span class="feature-tag">CoT Protocol</span>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔐</div>
+                    <h3>End-to-End Encryption</h3>
+                    <p>
+                        libsodium-based encryption with MLS key management.
+                        Zero-trust architecture with FIPS 140-2 compliance ready.
+                    </p>
+                    <span class="feature-tag">OWASP MASVS L2</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">System Design</div>
+                <h2>Clean Architecture</h2>
+                <p class="section-desc">
+                    Layered architecture following Android best practices with separation of concerns.
+                </p>
+            </div>
+
+            <div class="arch-diagram">
+                <div class="arch-layer">
+                    <div class="arch-layer-title">UI Layer</div>
+                    <div class="arch-box">
+                        <h4>Jetpack Compose</h4>
+                        <p>Material 3 UI</p>
+                    </div>
+                    <div class="arch-box">
+                        <h4>WorkingPttScreen</h4>
+                        <p>200dp PTT Button</p>
+                    </div>
+                </div>
+                <div class="arch-layer">
+                    <div class="arch-layer-title">Domain</div>
+                    <div class="arch-box">
+                        <h4>FloorControlProtocol</h4>
+                        <p>3GPP MCPTT</p>
+                    </div>
+                    <div class="arch-box">
+                        <h4>PttWebRtcManager</h4>
+                        <p>Half-Duplex PTT</p>
+                    </div>
+                </div>
+                <div class="arch-layer">
+                    <div class="arch-layer-title">Native</div>
+                    <div class="arch-box">
+                        <h4>Oboe Audio</h4>
+                        <p>&lt;20ms Latency</p>
+                    </div>
+                    <div class="arch-box">
+                        <h4>Opus Codec</h4>
+                        <p>12kbps Encoding</p>
+                    </div>
+                </div>
+                <div class="arch-layer">
+                    <div class="arch-layer-title">Transport</div>
+                    <div class="arch-box">
+                        <h4>RTP Packetizer</h4>
+                        <p>DSCP EF(46)</p>
+                    </div>
+                    <div class="arch-box">
+                        <h4>Multicast UDP</h4>
+                        <p>239.255.0.1:5004</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">Technologies</div>
+                <h2>Built With Latest 2026 Standards</h2>
+                <p class="section-desc">
+                    Every component selected for production-grade reliability and performance.
+                </p>
+            </div>
+
+            <div class="tech-grid">
+                <div class="tech-item">
+                    <div class="tech-name">Kotlin</div>
+                    <div class="tech-version">2.1.0</div>
+                    <div class="tech-use">Language</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">Jetpack Compose</div>
+                    <div class="tech-version">2024.12</div>
+                    <div class="tech-use">UI Framework</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">Oboe</div>
+                    <div class="tech-version">Latest</div>
+                    <div class="tech-use">Low-Latency Audio</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">Opus</div>
+                    <div class="tech-version">1.5.2</div>
+                    <div class="tech-use">Audio Codec</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">WebRTC</div>
+                    <div class="tech-version">119.0</div>
+                    <div class="tech-use">Voice/Video</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">libsodium</div>
+                    <div class="tech-version">2.0.2</div>
+                    <div class="tech-use">Encryption</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">Core-Telecom</div>
+                    <div class="tech-version">1.0.0</div>
+                    <div class="tech-use">VoIP Integration</div>
+                </div>
+                <div class="tech-item">
+                    <div class="tech-name">NDK</div>
+                    <div class="tech-version">27.0.119</div>
+                    <div class="tech-use">Native Build</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Status Section -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">Project Status</div>
+                <h2>Implementation Progress</h2>
+                <p class="section-desc">
+                    BETA 95% — Core features complete, testing in progress.
+                </p>
+            </div>
+
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="status-header">
+                        <div class="status-title">✅ Production Ready</div>
+                        <div class="status-indicator done"></div>
+                    </div>
+                    <ul class="status-items">
+                        <li>Opus codec integration</li>
+                        <li>Native Oboe audio engine</li>
+                        <li>DSCP QoS marking (EF 46)</li>
+                        <li>Half-duplex WebRTC PTT</li>
+                        <li>Floor control protocol</li>
+                    </ul>
+                </div>
+
+                <div class="status-card">
+                    <div class="status-header">
+                        <div class="status-title">🔧 In Progress</div>
+                        <div class="status-indicator wip"></div>
+                    </div>
+                    <ul class="status-items">
+                        <li>Unit test coverage (10% → 80%)</li>
+                        <li>Audio path integration testing</li>
+                        <li>Multi-device field testing</li>
+                        <li>Performance optimization</li>
+                    </ul>
+                </div>
+
+                <div class="status-card">
+                    <div class="status-header">
+                        <div class="status-title">📋 Planned</div>
+                        <div class="status-indicator todo"></div>
+                    </div>
+                    <ul class="status-items">
+                        <li>UWB ranging for radar</li>
+                        <li>Advanced FEC options</li>
+                        <li>Adaptive bitrate</li>
+                        <li>Gateway server deployment</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ATAK Section -->
+    <section class="atak-section">
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">ATAK Integration</div>
+                <h2>Android Team Awareness Kit</h2>
+                <p class="section-desc">
+                    Military-grade situational awareness with real-time Blue Force Tracking.
+                </p>
+            </div>
+
+            <div class="atak-grid">
+                <div class="atak-info">
+                    <h3>CoT Protocol Integration</h3>
+                    <p>
+                        The ATAK plugin integrates seamlessly with military C4I systems using
+                        the Cursor on Target (CoT) XML protocol for real-time position and
+                        status sharing between tactical teams.
+                    </p>
+                    <ul class="atak-features">
+                        <li>Team marker registration and updates</li>
+                        <li>Readiness status indicators</li>
+                        <li>PTT toolbar integration</li>
+                        <li>Channel management dropdown</li>
+                        <li>Internal and external CoT dispatching</li>
+                        <li>Blue Force Tracking synchronization</li>
+                    </ul>
+                </div>
+
+                <div class="atak-diagram">
+                    <div class="atak-flow">
+                        <div class="atak-flow-step">
+                            <div class="atak-step-number">1</div>
+                            <div class="atak-step-text">PluginLifecycle — Initialization</div>
+                        </div>
+                        <div class="atak-flow-step">
+                            <div class="atak-step-number">2</div>
+                            <div class="atak-step-text">MapComponent — CoT Dispatching</div>
+                        </div>
+                        <div class="atak-flow-step">
+                            <div class="atak-step-number">3</div>
+                            <div class="atak-step-text">DropDownReceiver — UI Components</div>
+                        </div>
+                        <div class="atak-flow-step">
+                            <div class="atak-step-number">4</div>
+                            <div class="atak-step-text">Internal Dispatcher — Local Map</div>
+                        </div>
+                        <div class="atak-flow-step">
+                            <div class="atak-step-number">5</div>
+                            <div class="atak-step-text">External Dispatcher — Network</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Network Section -->
+    <section>
+        <div class="container">
+            <div class="section-header">
+                <div class="section-label">Connectivity</div>
+                <h2>Network Configuration</h2>
+                <p class="section-desc">
+                    Optimized for mesh networks with QoS-aware packet marking.
+                </p>
+            </div>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>Port Allocation</h3>
+                    <ul class="status-items">
+                        <li><strong>10001</strong> — TCP Signaling (WebRTC)</li>
+                        <li><strong>5004</strong> — UDP RTP Audio</li>
+                        <li><strong>5005</strong> — UDP Floor Control</li>
+                        <li><strong>7777</strong> — UDP Identity Beacons</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <h3>Multicast Groups</h3>
+                    <ul class="status-items">
+                        <li><strong>239.255.0.1</strong> — PTT Group</li>
+                        <li><strong>239.255.77.1</strong> — Identity Beacons</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <h3>QoS Marking</h3>
+                    <ul class="status-items">
+                        <li><strong>EF 46</strong> — Expedited Forwarding</li>
+                        <li><strong>AF41</strong> — Flash Override</li>
+                        <li><strong>CS0</strong> — Best Effort</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-logo">
+                MeshRider <span>Wave</span>
+            </div>
+            <p class="footer-info">
+                Tactical communications platform for mission-critical scenarios
+            </p>
+            <div class="footer-meta">
+                <span>Version 2.7.0</span>
+                <span>February 5, 2026</span>
+                <span>DoodleLabs Singapore</span>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

@@ -12,6 +12,7 @@
 
 package com.doodlelabs.meshriderwave.presentation.ui.screens.settings
 
+import com.doodlelabs.meshriderwave.BuildConfig
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.*
@@ -34,6 +35,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -61,6 +63,8 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     var showNameDialog by remember { mutableStateOf(false) }
     var showPublicKeyDialog by remember { mutableStateOf(false) }
@@ -69,11 +73,41 @@ fun SettingsScreen(
     var showDeveloperDialog by remember { mutableStateOf(false) }
     var showRadioIpDialog by remember { mutableStateOf(false) }
 
-    // Settings states - now from ViewModel (persisted)
-    // No more local state - all settings persist to DataStore
+    // Success message function
+    fun showSuccess(message: String) {
+        scope.launch {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short,
+                withDismissAction = true
+            )
+        }
+    }
 
     DeepSpaceBackground {
         Scaffold(
+            snackbarHost = {
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.padding(16.dp)
+                ) { data ->
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = PremiumColors.ElectricCyan.copy(alpha = 0.9f)
+                        ),
+                        modifier = Modifier.padding(4.dp)
+                    ) {
+                        Snackbar(
+                            snackbarData = data,
+                            containerColor = Color.Transparent,
+                            contentColor = PremiumColors.DeepSpace,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+            },
             containerColor = Color.Transparent,
             topBar = {
                 TopAppBar(
@@ -166,7 +200,10 @@ fun SettingsScreen(
                                 title = "PTT Vibration",
                                 subtitle = "Vibrate when transmitting",
                                 checked = uiState.pttVibration,
-                                onCheckedChange = { viewModel.setPttVibration(it) }
+                                onCheckedChange = {
+                                    viewModel.setPttVibration(it)
+                                    showSuccess("PTT Vibration ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.Mic,
@@ -198,7 +235,10 @@ fun SettingsScreen(
                                 title = "Vibrate on Incoming Call",
                                 subtitle = "Haptic feedback for incoming calls",
                                 checked = uiState.vibrateOnCall,
-                                onCheckedChange = { viewModel.setVibrateOnCall(it) }
+                                onCheckedChange = {
+                                    viewModel.setVibrateOnCall(it)
+                                    showSuccess("Call vibration ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsToggle(
                                 icon = Icons.Outlined.PhoneForwarded,
@@ -206,7 +246,10 @@ fun SettingsScreen(
                                 title = "Auto-Accept Calls",
                                 subtitle = "Answer incoming calls automatically",
                                 checked = uiState.autoAcceptCalls,
-                                onCheckedChange = { viewModel.setAutoAcceptCalls(it) }
+                                onCheckedChange = {
+                                    viewModel.setAutoAcceptCalls(it)
+                                    showSuccess("Auto-accept ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.PhoneInTalk,
@@ -245,7 +288,10 @@ fun SettingsScreen(
                                 title = "Location Sharing",
                                 subtitle = "Share position with team",
                                 checked = uiState.locationSharing,
-                                onCheckedChange = { viewModel.setLocationSharing(it) }
+                                onCheckedChange = {
+                                    viewModel.setLocationSharing(it)
+                                    showSuccess("Location sharing ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.Update,
@@ -275,7 +321,10 @@ fun SettingsScreen(
                                 title = "SOS System",
                                 subtitle = "Enable emergency alerts",
                                 checked = uiState.sosEnabled,
-                                onCheckedChange = { viewModel.setSosEnabled(it) }
+                                onCheckedChange = {
+                                    viewModel.setSosEnabled(it)
+                                    showSuccess("SOS system ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.NotificationsActive,
@@ -305,7 +354,10 @@ fun SettingsScreen(
                                 title = "Auto Reconnect",
                                 subtitle = "Automatically reconnect to mesh",
                                 checked = uiState.autoReconnect,
-                                onCheckedChange = { viewModel.setAutoReconnect(it) }
+                                onCheckedChange = {
+                                    viewModel.setAutoReconnect(it)
+                                    showSuccess("Auto-reconnect ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.Wifi,
@@ -418,7 +470,10 @@ fun SettingsScreen(
                                 title = "Hardware Echo Cancellation",
                                 subtitle = "Use device AEC/NS for clear audio",
                                 checked = uiState.hardwareAEC,
-                                onCheckedChange = { viewModel.setHardwareAEC(it) }
+                                onCheckedChange = {
+                                    viewModel.setHardwareAEC(it)
+                                    showSuccess("Audio processing ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsToggle(
                                 icon = Icons.Outlined.Videocam,
@@ -426,7 +481,10 @@ fun SettingsScreen(
                                 title = "Hardware Video Encoding",
                                 subtitle = "H.264 High Profile acceleration",
                                 checked = uiState.videoHwAccel,
-                                onCheckedChange = { viewModel.setVideoHwAccel(it) }
+                                onCheckedChange = {
+                                    viewModel.setVideoHwAccel(it)
+                                    showSuccess("Video acceleration ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.HighQuality,
@@ -465,7 +523,10 @@ fun SettingsScreen(
                                 title = "Push Notifications",
                                 subtitle = "Calls, messages, SOS alerts",
                                 checked = uiState.notificationsEnabled,
-                                onCheckedChange = { viewModel.setNotificationsEnabled(it) }
+                                onCheckedChange = {
+                                    viewModel.setNotificationsEnabled(it)
+                                    showSuccess("Notifications ${if (it) "enabled" else "disabled"}")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.RingVolume,
@@ -517,7 +578,10 @@ fun SettingsScreen(
                                 title = "Dark Mode",
                                 subtitle = "Always dark for tactical use",
                                 checked = uiState.nightMode,
-                                onCheckedChange = { viewModel.setNightMode(it) }
+                                onCheckedChange = {
+                                    viewModel.setNightMode(it)
+                                    showSuccess("Theme updated")
+                                }
                             )
                             PremiumSettingsItem(
                                 icon = Icons.Outlined.Language,
@@ -570,7 +634,7 @@ fun SettingsScreen(
                                 icon = Icons.Outlined.Info,
                                 iconColor = PremiumColors.ElectricCyan,
                                 title = "Mesh Rider Wave",
-                                subtitle = "Version 1.0.0 (Build 2026.01)",
+                                subtitle = "Version ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                                 onClick = { showAboutDialog = true }
                             )
                             PremiumSettingsItem(

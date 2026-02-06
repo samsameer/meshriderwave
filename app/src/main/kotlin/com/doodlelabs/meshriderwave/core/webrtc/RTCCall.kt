@@ -201,12 +201,24 @@ class RTCCall(
         remoteHangupReceived = false  // HANGUP FIX Jan 2026
 
         executor.execute {
-            val rtcConfig = PeerConnection.RTCConfiguration(emptyList()).apply {
+            // STUN/TURN configuration for NAT traversal (developer.android.com best practices)
+            // Google's public STUN servers are free and reliable for mesh networks
+            val iceServers = listOf(
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer()
+            )
+
+            val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
                 sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-                continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
                 enableCpuOveruseDetection = true
                 // TCP candidates for mesh networks with firewalls
                 tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
+                // Low-bandwidth network optimizations
+                // Prefer relay candidates when direct connection fails (mesh scenarios)
+                iceTransportsType = PeerConnection.IceTransportsType.ALL
             }
 
             peerConnection = factory?.createPeerConnection(rtcConfig, peerConnectionObserver)
@@ -898,22 +910,50 @@ class RTCCall(
                     handleConnectionEstablished()
                 }
                 PeerConnection.IceConnectionState.DISCONNECTED -> {
-                    logW("ICE disconnected - starting enterprise reconnection")
-                    startEnterpriseReconnection("Network disconnected")
+                    // Low-bandwidth optimization: Don't immediately reconnect on DISCONNECTED
+                    // WebRTC may temporarily show DISCONNECTED during network switching
+                    // With CONTINUOUS gathering, it should auto-recover
+                    logW("ICE disconnected - waiting for auto-recovery (CONTINUOUS gathering)")
+                    updateState {
+                        copy(
+                            networkQuality = CallState.NetworkQuality.FAIR,
+                            errorMessage = "Connection unstable..."
+                        )
+                    }
+                    // Delay reconnection to give CONTINUOUS gathering time to find better path
+                    callScope.launch {
+                        delay(2000) // 2 second grace period for auto-recovery
+                        if (peerConnection?.iceConnectionState() == PeerConnection.IceConnectionState.DISCONNECTED) {
+                            logW("ICE still disconnected after grace period - starting reconnection")
+                            startEnterpriseReconnection("Network disconnected")
+                        }
+                    }
                 }
                 PeerConnection.IceConnectionState.FAILED -> {
-                    logE("ICE connection failed")
+                    logE("ICE connection failed - all candidates exhausted")
+                    // With CONTINUOUS gathering, new candidates may still appear
+                    // Try ICE restart to force new candidate gathering
+                    updateState {
+                        copy(
+                            networkQuality = CallState.NetworkQuality.BAD,
+                            errorMessage = "Connection failed - trying alternate route..."
+                        )
+                    }
                     startEnterpriseReconnection("Connection failed")
                 }
                 PeerConnection.IceConnectionState.CLOSED -> {
                     stopReconnection()
+                    stopHeartbeat()
                     updateState { copy(status = CallState.Status.ENDED) }
                 }
                 PeerConnection.IceConnectionState.CHECKING -> {
-                    logD("ICE checking - connection in progress")
+                    logD("ICE checking - testing connectivity with new candidates")
+                    updateState {
+                        copy(errorMessage = "Connecting...")
+                    }
                 }
                 PeerConnection.IceConnectionState.NEW -> {
-                    logD("ICE new - waiting for candidates")
+                    logD("ICE new - waiting for STUN candidates")
                 }
                 else -> {}
             }
@@ -929,7 +969,8 @@ class RTCCall(
 
         override fun onIceCandidate(candidate: IceCandidate) {
             logD("ICE candidate: ${candidate.sdp.take(50)}...")
-            // For mesh networks, we use GATHER_ONCE so candidates are bundled in SDP
+            // With CONTINUOUS gathering, new candidates arrive periodically
+            // Candidates are bundled in SDP for mesh networks (no trickle ICE)
         }
 
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {

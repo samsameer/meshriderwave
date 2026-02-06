@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -41,16 +44,21 @@ class MeshNetworkManager @Inject constructor(
     private val connector: Connector,
     private val ioDispatcher: CoroutineDispatcher
 ) {
+    // RACE CONDITION FIX Feb 2026: Use mutex for server socket lifecycle
+    private val socketLock = Mutex()
     private var serverSocket: ServerSocket? = null
     private var serverJob: Job? = null
     private val scope = CoroutineScope(ioDispatcher + SupervisorJob())
 
-    // State
+    // State - use atomic compare-and-set for state transitions
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning
 
     private val _localAddresses = MutableStateFlow<List<String>>(emptyList())
     val localAddresses: StateFlow<List<String>> = _localAddresses
+
+    // Track active connection handlers for clean shutdown
+    private val activeConnections = AtomicInteger(0)
 
     // Events
     private val _incomingCalls = MutableSharedFlow<IncomingCall>(extraBufferCapacity = 1)
@@ -69,52 +77,70 @@ class MeshNetworkManager @Inject constructor(
 
     /**
      * Start listening for incoming connections
+     * RACE CONDITION FIX Feb 2026: Use mutex to prevent concurrent start/stop
      */
     fun start() {
-        if (_isRunning.value) {
-            logD("start() already running")
+        // TOCTOU FIX: Use mutex for check-then-act pattern
+        if (!socketLock.tryLock()) {
+            logD("start() already starting/stopping, skipping")
             return
         }
 
-        serverJob = scope.launch {
-            try {
-                serverSocket = ServerSocket(BuildConfig.SIGNALING_PORT)
-                _isRunning.value = true
-                logI("start() listening on port ${BuildConfig.SIGNALING_PORT}")
-
-                updateLocalAddresses()
-
-                // FIXED Jan 2026: Periodic address refresh for USB-C ethernet detection
-                launch {
-                    while (isActive) {
-                        kotlinx.coroutines.delay(10_000) // Refresh every 10 seconds
-                        updateLocalAddresses()
-                    }
-                }
-
-                while (isActive) {
-                    try {
-                        // CRASH-FIX Jan 2026: Safe null check instead of !!
-                        val server = serverSocket ?: break
-                        val socket = server.accept()
-                        logD("start() incoming connection from ${socket.remoteSocketAddress}")
-                        // FIX Jan 2026: Launch each connection handler in its own coroutine
-                        // so the accept loop isn't blocked waiting for handleIncomingConnection
-                        // to complete. This was causing the accept loop to stall when a call
-                        // connection was being processed (readMessage blocks for up to 10s).
-                        launch {
-                            handleIncomingConnection(socket)
-                        }
-                    } catch (e: SocketException) {
-                        if (isActive) logE("start() socket error", e)
-                    }
-                }
-            } catch (e: Exception) {
-                logE("start() failed", e)
-                _connectionEvents.emit(ConnectionEvent.Error(e.message ?: "Server error"))
-            } finally {
-                _isRunning.value = false
+        try {
+            if (_isRunning.value) {
+                logD("start() already running")
+                return
             }
+
+            serverJob = scope.launch {
+                try {
+                    socketLock.withLock {
+                        serverSocket = ServerSocket(BuildConfig.SIGNALING_PORT)
+                    }
+                    _isRunning.value = true
+                    logI("start() listening on port ${BuildConfig.SIGNALING_PORT}")
+
+                    updateLocalAddresses()
+
+                    // FIXED Jan 2026: Periodic address refresh for USB-C ethernet detection
+                    launch {
+                        while (isActive) {
+                            kotlinx.coroutines.delay(10_000) // Refresh every 10 seconds
+                            updateLocalAddresses()
+                        }
+                    }
+
+                    while (isActive) {
+                        try {
+                            // CRASH-FIX Jan 2026: Safe null check instead of !!
+                            val server = socketLock.withLock { serverSocket } ?: break
+                            val socket = server.accept()
+                            logD("start() incoming connection from ${socket.remoteSocketAddress}")
+                            // FIX Jan 2026: Launch each connection handler in its own coroutine
+                            // so the accept loop isn't blocked waiting for handleIncomingConnection
+                            // to complete. This was causing the accept loop to stall when a call
+                            // connection was being processed (readMessage blocks for up to 10s).
+                            activeConnections.incrementAndGet()
+                            launch {
+                                try {
+                                    handleIncomingConnection(socket)
+                                } finally {
+                                    activeConnections.decrementAndGet()
+                                }
+                            }
+                        } catch (e: SocketException) {
+                            if (isActive) logE("start() socket error", e)
+                        }
+                    }
+                } catch (e: Exception) {
+                    logE("start() failed", e)
+                    _connectionEvents.emit(ConnectionEvent.Error(e.message ?: "Server error"))
+                } finally {
+                    _isRunning.value = false
+                }
+            }
+        } finally {
+            socketLock.unlock()
         }
     }
 
@@ -130,25 +156,48 @@ class MeshNetworkManager @Inject constructor(
 
     /**
      * Stop listening
-     * FIXED Jan 2026: Cancel scope to prevent coroutine leaks
+     * RACE CONDITION FIX Feb 2026: Wait for active connections to complete
      */
     fun stop() {
         logD("stop()")
+
+        // Cancel server job first
         serverJob?.cancel()
         serverJob = null
-        try {
-            serverSocket?.close()
-        } catch (e: Exception) {
-            logE("Error closing server socket", e)
+
+        // Close server socket under mutex - run in scope since withLock is suspend
+        scope.launch {
+            socketLock.withLock {
+                try {
+                    serverSocket?.close()
+                } catch (e: Exception) {
+                    logE("Error closing server socket", e)
+                }
+                serverSocket = null
+            }
+        }.invokeOnCompletion {
+            _isRunning.value = false
         }
-        serverSocket = null
-        _isRunning.value = false
+
+        // Wait for active connection handlers to complete
+        scope.launch {
+            var attempts = 0
+            while (activeConnections.get() > 0 && attempts < 50) {
+                kotlinx.coroutines.delay(100)
+                attempts++
+            }
+            if (activeConnections.get() > 0) {
+                logW("stop() ${activeConnections.get()} connections still active after 5s")
+            }
+        }
+
         // Note: scope is not cancelled here as this is a singleton
         // and may be restarted. Scope coroutines are cancelled via serverJob.
     }
 
     /**
      * Initiate outgoing call
+     * RACE CONDITION FIX Feb 2026: Ensure socket is closed on all error paths
      */
     suspend fun initiateCall(contact: Contact, offer: String): CallResult {
         return withContext(ioDispatcher) {
@@ -173,6 +222,7 @@ class MeshNetworkManager @Inject constructor(
 
                 if (encrypted == null) {
                     socket.close()
+                    socket = null
                     return@withContext CallResult.Error("Encryption failed")
                 }
 
@@ -230,6 +280,7 @@ class MeshNetworkManager @Inject constructor(
                 if (responseBytes == null) {
                     logE("initiateCall: NO RESPONSE")
                     socket.close()
+                    socket = null
                     return@withContext CallResult.Error("No response")
                 }
 
@@ -244,24 +295,32 @@ class MeshNetworkManager @Inject constructor(
 
                 if (responseStr == null) {
                     socket.close()
+                    socket = null
                     return@withContext CallResult.Error("Decryption failed")
                 }
 
                 val response = JSONObject(responseStr)
-                when (response.optString("action")) {
+                val result = when (response.optString("action")) {
                     "connected" -> {
                         val answer = response.getString("answer")
-                        CallResult.Connected(socket, answer)
+                        // Transfer socket ownership to caller
+                        val connectedSocket = socket
+                        socket = null
+                        CallResult.Connected(connectedSocket, answer)
                     }
                     "declined" -> {
                         socket.close()
+                        socket = null
                         CallResult.Declined
                     }
                     else -> {
                         socket.close()
+                        socket = null
                         CallResult.Error("Unknown response")
                     }
                 }
+
+                result
             } catch (e: Exception) {
                 logE("initiateCall() error", e)
                 // Ensure socket is closed on exception
@@ -316,6 +375,11 @@ class MeshNetworkManager @Inject constructor(
                 "call" -> {
                     val offer = message.getString("offer")
                     logI("handleIncomingConnection: CALL received, socket open=${!socket.isClosed} connected=${socket.isConnected}")
+
+                    // Store pending call info for notification decline action
+                    // RACE CONDITION FIX Feb 2026: Use suspend function
+                    PendingCallStore.setPendingCall(socket, senderPublicKey.copyOf())
+
                     _incomingCalls.emit(
                         IncomingCall(
                             socket = socket,
@@ -537,6 +601,7 @@ class MeshNetworkManager @Inject constructor(
     /**
      * Send message to a specific peer by public key
      * Used for PTT, group messaging, etc.
+     * RACE CONDITION FIX Feb 2026: Proper socket lifecycle management
      */
     suspend fun sendToPeer(
         recipientPublicKey: ByteArray,
@@ -554,7 +619,10 @@ class MeshNetworkManager @Inject constructor(
                     createdAt = System.currentTimeMillis()
                 )
 
-                socket = connector.connect(tempContact) ?: return@withContext false
+                socket = connector.connect(tempContact)
+                if (socket == null) {
+                    return@withContext false
+                }
 
                 // Encrypt message
                 val encrypted = cryptoManager.encryptMessage(
@@ -566,12 +634,14 @@ class MeshNetworkManager @Inject constructor(
 
                 if (encrypted == null) {
                     socket.close()
+                    socket = null
                     return@withContext false
                 }
 
                 // Send
                 sendMessage(socket, encrypted)
                 socket.close()
+                socket = null
 
                 logD("sendToPeer() success to ${recipientPublicKey.take(4).toByteArraySafe().toHexString()}")
                 true
@@ -619,6 +689,68 @@ class MeshNetworkManager @Inject constructor(
      * FIXED Jan 2026: Avoid infinite recursion with custom extension
      */
     private fun List<Byte>.toByteArraySafe(): ByteArray = ByteArray(size) { this[it] }
+
+    /**
+     * PendingCallStore - Stores pending incoming call info for notification actions.
+     *
+     * CallActionReceiver needs access to the pending call's socket and sender key
+     * to send the decline response. This static store bridges that gap.
+     *
+     * Per developer.android.com, static storage is acceptable for short-lived
+     * pending operations (notification actions must complete within 10 seconds).
+     *
+     * RACE CONDITION FIX Feb 2026: Use mutex for thread-safe access
+     */
+    object PendingCallStore {
+        private val lock = Mutex()
+        @Volatile
+        private var pendingCall: PendingCallInfo? = null
+
+        /**
+         * Store pending call info when incoming call is received.
+         * Thread-safe: ensures old socket is closed before overwriting.
+         */
+        suspend fun setPendingCall(socket: Socket, senderPublicKey: ByteArray) {
+            lock.withLock {
+                // Close any existing pending socket
+                pendingCall?.socket?.close()
+                pendingCall = PendingCallInfo(socket, senderPublicKey.copyOf())
+            }
+        }
+
+        /**
+         * Get pending call info for decline action.
+         * Clears the pending call atomically.
+         */
+        suspend fun getAndClearPendingCall(): PendingCallInfo? {
+            return lock.withLock {
+                val call = pendingCall
+                pendingCall = null
+                call
+            }
+        }
+
+        /**
+         * Get pending call info without clearing (for read-only access).
+         */
+        fun peekPendingCall(): PendingCallInfo? = pendingCall
+
+        /**
+         * Clear pending call info after answer/decline/timeout.
+         * Thread-safe: ensures socket is closed.
+         */
+        suspend fun clearPendingCall() {
+            lock.withLock {
+                pendingCall?.socket?.close()
+                pendingCall = null
+            }
+        }
+
+        data class PendingCallInfo(
+            val socket: Socket,
+            val senderPublicKey: ByteArray
+        )
+    }
 
     // Data classes
     data class IncomingCall(

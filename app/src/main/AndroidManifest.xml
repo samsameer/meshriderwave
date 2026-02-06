@@ -51,6 +51,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    
+    <!-- Battery Optimization (for Doze mode) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Hardware Features -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -59,6 +62,16 @@
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
+    <!-- CRITICAL FIX: Signature-level permission for protected PTT receiver -->
+    <!-- Per developer.android.com/training/permissions/defining -->
+    <!-- Prevents malicious apps from sending fake PTT button events -->
+    <!-- System broadcasts (Samsung XCover) bypass this permission check -->
+    <permission
+        android:name="com.doodlelabs.meshriderwave.permission.PTT_BUTTON"
+        android:protectionLevel="signature"
+        android:label="@string/ptt_button_permission_label"
+        android:description="@string/ptt_button_permission_desc" />
 
     <application
         android:name=".MeshRiderApp"
@@ -72,7 +85,16 @@
         android:theme="@style/Theme.MeshRiderWave"
         android:networkSecurityConfig="@xml/network_security_config"
         android:hardwareAccelerated="true"
+        android:resizeableActivity="true"
         tools:targetApi="35">
+
+        <!-- Samsung DeX support -->
+        <meta-data
+            android:name="com.samsung.android.keepalive.density"
+            android:value="true" />
+        <meta-data
+            android:name="com.samsung.android.multiwindow.enable"
+            android:value="true" />
 
         <!-- Main Activity - Supports all orientations for tablets/phones -->
         <activity
@@ -87,6 +109,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -129,10 +152,13 @@
             android:foregroundServiceType="microphone" />
 
         <!-- Samsung XCover PTT Button Receiver -->
+        <!-- CRITICAL FIX: Added permission requirement to prevent spoofing -->
+        <!-- Samsung system broadcasts bypass permission check (system-level protection) -->
         <receiver
             android:name=".ptt.XCoverPttButtonReceiver"
             android:enabled="true"
-            android:exported="false">
+            android:exported="true"
+            android:permission="com.doodlelabs.meshriderwave.permission.PTT_BUTTON">
             <!-- Samsung XCover button intent -->
             <intent-filter>
                 <action android:name="com.samsung.android.intent.XCOVER_KEY" />
@@ -144,6 +170,30 @@
             <!-- Generic PTT button intent -->
             <intent-filter>
                 <action android:name="android.intent.action.PTT_BUTTON" />
+            </intent-filter>
+            <!-- Bluetooth headset button -->
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Call Action Receiver - Handles notification button clicks -->
+        <!-- Per developer.android.com, exported=false for security (only app can send) -->
+        <receiver
+            android:name=".core.telecom.CallActionReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <!-- Answer incoming call -->
+                <action android:name="com.doodlelabs.meshriderwave.ACTION_ANSWER_CALL" />
+            </intent-filter>
+            <intent-filter>
+                <!-- Decline incoming call -->
+                <action android:name="com.doodlelabs.meshriderwave.ACTION_DECLINE_CALL" />
+            </intent-filter>
+            <intent-filter>
+                <!-- Hangup ongoing call -->
+                <action android:name="com.doodlelabs.meshriderwave.ACTION_HANGUP_CALL" />
             </intent-filter>
         </receiver>
 

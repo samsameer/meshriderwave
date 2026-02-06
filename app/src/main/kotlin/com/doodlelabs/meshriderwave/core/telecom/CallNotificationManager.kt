@@ -93,9 +93,13 @@ class CallNotificationManager @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Decline action — broadcast to service
+        // Decline action — broadcast to CallActionReceiver
         val declineIntent = Intent(ACTION_DECLINE).apply {
             setPackage(context.packageName)
+            // Pass call details so receiver can decline properly
+            putExtra(CallActionReceiver.EXTRA_REMOTE_ADDRESS, remoteAddress)
+            putExtra(CallActionReceiver.EXTRA_OFFER, offer)
+            putExtra(CallActionReceiver.EXTRA_SENDER_KEY, senderKeyBase64)
         }
         val declinePI = PendingIntent.getBroadcast(
             context, 2, declineIntent,
@@ -107,16 +111,32 @@ class CallNotificationManager @Inject constructor(
             caller, declinePI, answerPI
         )
 
+        // Per developer.android.com 2026:
+        // - PRIORITY_HIGH for heads-up display on Android < 8.1 (channel handles 8.1+)
+        // - DO NOT set ongoing(true) for incoming calls (blocks swipe-to-dismiss)
+        // - setAutoCancel(false) keeps notification until call is answered/declined
+        // - FLAG_MUTABLE for pending intents on Android 12+
+        // - SAMSUNG FIX: GroupAlertBehavior ensures notification appears even in bundled groups
+        // - SAMSUNG FIX: TimeoutAfter prevents notification from being auto-dismissed
         val notification = NotificationCompat.Builder(context, MeshRiderApp.CHANNEL_CALLS_INCOMING)
             .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Incoming Call")
+            .setContentText(callerName)
             .setContentIntent(fullScreenPI)
             .setFullScreenIntent(fullScreenPI, true)
             .setStyle(callStyle)
-            .setOngoing(true)
-            .setAutoCancel(false)
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // Heads-up display
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(false) // Don't auto-cancel on tap (use buttons)
+            .setOngoing(false) // Allow swipe-to-dismiss (user can still decline)
             .addPerson(caller)
+            // SAMSUNG FIX: Ensure notification alerts even when grouped
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            // SAMSUNG FIX: No timeout - keep showing until explicitly cancelled
+            .setTimeoutAfter(0) // 0 = no timeout (important for lock screen)
+            // SAMSUNG FIX: Show on lock screen even if DND is on (call category)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
 
         try {
@@ -131,6 +151,8 @@ class CallNotificationManager @Inject constructor(
 
     /**
      * Fallback incoming notification without CallStyle for edge cases.
+     * PRIORITY_HIGH ensures heads-up display on compatible devices.
+     * SAMSUNG FIX: Added GroupAlertBehavior and timeout handling.
      */
     private fun postFallbackIncomingNotification(
         callerName: String,
@@ -142,14 +164,17 @@ class CallNotificationManager @Inject constructor(
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Incoming Call")
             .setContentText(callerName)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // Heads-up display
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setFullScreenIntent(fullScreenPI, true)
-            .setOngoing(true)
-            .setAutoCancel(false)
+            .setOngoing(false) // Allow swipe-to-dismiss
+            .setAutoCancel(false) // Don't auto-cancel on tap
             .addAction(R.drawable.ic_stop, "Decline", declinePI)
             .addAction(R.drawable.ic_notification, "Answer", answerPI)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // SAMSUNG FIX: Ensure notification appears in bundled groups
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setTimeoutAfter(0) // No timeout for lock screen
             .build()
 
         try {
@@ -191,6 +216,7 @@ class CallNotificationManager @Inject constructor(
             caller, hangupPI
         )
 
+        // SAMSUNG FIX: Added GroupAlertBehavior for ongoing call visibility
         val notification = NotificationCompat.Builder(context, MeshRiderApp.CHANNEL_CALLS_ONGOING)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(contentPI)
@@ -200,6 +226,10 @@ class CallNotificationManager @Inject constructor(
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setUsesChronometer(true)
             .addPerson(caller)
+            // SAMSUNG FIX: Ensure ongoing call notification is visible in bundled groups
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            // SAMSUNG FIX: High priority for ongoing call visibility
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
 
         try {

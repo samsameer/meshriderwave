@@ -26,14 +26,14 @@ oboe::Result AudioEngine::createPlaybackStream() {
            ->setSharingMode(oboe::SharingMode::Exclusive)
            ->setUsage(oboe::Usage::Media)  // Speaker output for PTT
            ->setContentType(oboe::ContentType::Speech)
-           ->setCallback(&playbackCallback_)
-           ->setBufferCapacityInFrames(kBufferSize * 4);  // Larger buffer for playback
+           ->setCallback(playbackCallback_.get())
+           ->setBufferCapacityInFrames(kPcmFrameSizeBytes * 4);  // Larger buffer for playback
 
     return builder.openStream(playbackStream_);
 }
 
 // Playback callback - feeds audio to speaker
-oboe::DataCallbackResult AudioEngine::PlaybackCallback::onAudioReady(
+oboe::DataCallbackResult PlaybackCallback::onAudioReady(
     oboe::AudioStream* stream,
     void* audioData,
     int32_t numFrames) {
@@ -64,7 +64,7 @@ oboe::DataCallbackResult AudioEngine::PlaybackCallback::onAudioReady(
     return oboe::DataCallbackResult::Continue;
 }
 
-void AudioEngine::PlaybackCallback::onErrorBeforeClose(
+void PlaybackCallback::onErrorBeforeClose(
     oboe::AudioStream* stream,
     oboe::Result error) {
 
@@ -77,7 +77,7 @@ void AudioEngine::PlaybackCallback::onErrorBeforeClose(
     }
 }
 
-void AudioEngine::PlaybackCallback::enqueueAudio(
+void PlaybackCallback::enqueueAudio(
     const uint8_t* data,
     size_t size) {
 
@@ -85,6 +85,12 @@ void AudioEngine::PlaybackCallback::enqueueAudio(
         jitterBuffer_ = std::make_unique<RtpJitterBuffer>();
     }
     jitterBuffer_->enqueue(data, size);
+}
+
+void PlaybackCallback::resetJitterBuffer() {
+    if (jitterBuffer_) {
+        jitterBuffer_->reset();
+    }
 }
 
 } // namespace ptt

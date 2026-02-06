@@ -36,12 +36,12 @@ android {
         buildConfigField("int", "MESH_BROADCAST_PORT", "11111")
         buildConfigField("String", "MESH_SUBNET", "\"10.223.\"")
 
-        // NDK build arguments for Oboe - TEMPORARILY DISABLED
-        // externalNativeBuild {
-        //     cmake {
-        //         arguments += listOf("-DANDROID_STL=c++_shared")
-        //     }
-        // }
+        // NDK build arguments for Oboe
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
     }
 
     buildTypes {

@@ -326,6 +326,10 @@
     <string name="permission_location">Location access needed for Blue Force Tracking</string>
     <string name="permission_notifications">Notification access needed for incoming calls</string>
 
+    <!-- PTT Button Permission (Signature-level) -->
+    <string name="ptt_button_permission_label">PTT Button Control</string>
+    <string name="ptt_button_permission_desc">Allows the app to receive PTT button events from hardware buttons. Only apps signed by Doodle Labs can use this permission.</string>
+
     <!-- Settings: Calls (Core-Telecom) -->
     <string name="settings_section_calls">Calls</string>
     <string name="settings_vibrate_on_call">Vibrate on Incoming Call</string>

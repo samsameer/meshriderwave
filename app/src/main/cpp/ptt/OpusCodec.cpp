@@ -71,7 +71,7 @@ int OpusEncoder::encode(const int16_t* pcm, int frameSize,
     }
 
     if (frameSize != OPUS_FRAME_SIZE) {
-        __android_log_print(ANDROID_LOG_WARNING, LOG_TAG,
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG,
             "Frame size mismatch: expected %d, got %d", OPUS_FRAME_SIZE, frameSize);
     }
 
@@ -264,7 +264,7 @@ const char* OpusCodecFactory::getVersion() {
 int OpusCodecFactory::getLookahead() {
     // Create temporary encoder to get lookahead
     int error = OPUS_OK;
-    OpusEncoder* enc = opus_encoder_create(OPUS_SAMPLE_RATE, OPUS_CHANNELS,
+    ::OpusEncoder* enc = opus_encoder_create(OPUS_SAMPLE_RATE, OPUS_CHANNELS,
                                           OPUS_APPLICATION_VOIP, &error);
     if (!enc) return 0;
 

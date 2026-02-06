@@ -317,6 +317,10 @@ class Connector @Inject constructor(
         noAddressesError = false  // CALLS NOT WORKING FIX Jan 2026
     }
 
+    /**
+     * Create and connect socket with proper error handling.
+     * RACE CONDITION FIX Feb 2026: Ensure socket is closed on all error paths.
+     */
     private fun createSocket(address: InetSocketAddress): Socket {
         val socket = Socket()
         try {
@@ -325,7 +329,11 @@ class Connector @Inject constructor(
             socket.connect(address, connectTimeout)
             return socket
         } catch (e: Exception) {
-            socket.close()
+            try {
+                socket.close()
+            } catch (closeEx: Exception) {
+                // Ignore close errors
+            }
             throw e
         }
     }

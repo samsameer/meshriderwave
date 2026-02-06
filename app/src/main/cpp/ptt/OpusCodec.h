@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
-#include <opus/opus.h>
+#include "opus.h"
 
 namespace meshrider {
 namespace ptt {
@@ -64,7 +64,7 @@ public:
     int getComplexity() const { return complexity_; }
 
 private:
-    OpusEncoder* encoder_;
+    ::OpusEncoder* encoder_;  // Opus library type
     int bitrate_;
     bool fecEnabled_;
     int complexity_;
@@ -96,7 +96,7 @@ public:
     int getLastError() const { return lastError_; }
 
 private:
-    OpusDecoder* decoder_;
+    ::OpusDecoder* decoder_;  // Opus library type
     int lastError_;
 };
 
