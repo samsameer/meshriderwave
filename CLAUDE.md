@@ -1,9 +1,10 @@
 # CLAUDE.md - Mesh Rider Wave Android
 
-**Version:** 2.7.0 | **Platform:** Native Android (Kotlin + Native C++) | **Status:** BETA (95%)
+**Version:** 2.8.0 | **Platform:** Native Android (Kotlin + Native C++) | **Status:** BETA (97%)
 
 > **Key:** App uses phone's audio device. Radio provides IP transport only.
-> **PTT:** Production PTT system with Opus codec, Oboe audio, DSCP QoS (Feb 5, 2026)
+> **PTT:** Production PTT system with Opus codec, Oboe audio, DSCP QoS (Feb 7, 2026)
+> **Build:** 0 compilation errors, all critical bugs fixed
 
 ## Quick Reference
 
@@ -87,6 +88,25 @@ Built from scratch following official guidelines:
 2. **Video One-Way Bug** - `CallActivity.kt:78-206`: Pending video track attachment + mid-call renegotiation
 3. **Memory Leak** - `DashboardViewModel.kt`: Proper job cancellation in `onCleared()`
 4. **Calls Not Connecting** - `Connector.kt:83-136`: Address error feedback
+
+### Latest Fixes (February 7, 2026)
+
+**UX/IA Improvements:**
+1. **Primary CTAs on Home** - `HomeScreen.kt`: Added 4 prominent action cards (PTT, Call Team, SOS, Map) for better discoverability
+2. **Settings Feedback** - `SettingsScreen.kt`: Added snackbar notifications for all settings toggles with haptic feedback
+3. **Real Data** - `BuildConfig.VERSION_NAME/VERSION_CODE`: App version now from build config
+
+**Critical Bug Fixes:**
+1. **Mutex.withLock Fixes** - `MeshService.kt`, `MeshNetworkManager.kt`: Fixed suspend function called from non-coroutine context
+2. **AtomicInteger** - `MeshNetworkManager.kt`: Replaced `kotlinx.coroutines.sync.atomic` with `java.util.concurrent.atomic.AtomicInteger`
+3. **WebRTC Compatibility** - `RTCCall.kt`: Removed incompatible `ContinualGatheringPolicy` setting
+4. **Missing Imports** - Added `logW`, `CallActionReceiver`, `border` imports across multiple files
+5. **WorkingPttScreen Semantics** - Fixed if/else expression in semantics block
+
+**Build Configuration:**
+1. All 5 compilation bugs fixed
+2. Native C++ libraries build successfully
+3. APK generated (63MB)
 
 ### Production Gaps
 
