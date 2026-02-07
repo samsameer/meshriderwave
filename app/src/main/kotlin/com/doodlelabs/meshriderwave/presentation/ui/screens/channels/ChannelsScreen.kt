@@ -56,6 +56,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChannelsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToPtt: () -> Unit = {},
     viewModel: ChannelsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()

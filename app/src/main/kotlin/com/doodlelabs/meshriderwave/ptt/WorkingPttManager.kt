@@ -14,26 +14,34 @@
 package com.doodlelabs.meshriderwave.ptt
 
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * PRODUCTION PTT Manager - Fully working implementation
- * 
+ *
  * Architecture:
  * - Oboe (C++): Low-latency audio capture/playback
  * - Opus: 10-40x bandwidth reduction (6-24kbps)
  * - Reliable Floor Control: ACK/retry mechanism
  * - Unicast Fallback: Works on any network
- * 
+ *
  * Targets:
  * - PTT Access Time: < 200ms (95%)
  * - Mouth-to-Ear Latency: < 250ms (95%)
  * - Packet Loss Recovery: < 5% loss acceptable
  */
-class WorkingPttManager(private val context: Context) {
+@Singleton
+class WorkingPttManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
     companion object {
         private const val TAG = "MeshRider:WorkingPTT"
@@ -81,6 +89,30 @@ class WorkingPttManager(private val context: Context) {
 
     // Audio manager for routing
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    /**
+     * Set speakerphone on/off using proper API for Android 12+
+     */
+    private fun setSpeakerphoneOn(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // On Android 12+, use setCommunicationDevice
+            val devices = audioManager.availableCommunicationDevices
+            val speakerDevice = devices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            val earpieceDevice = devices.find {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE ||
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+            }
+
+            if (on && speakerDevice != null) {
+                audioManager.setCommunicationDevice(speakerDevice)
+            } else if (!on && earpieceDevice != null) {
+                audioManager.setCommunicationDevice(earpieceDevice)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = on
+        }
+    }
 
     /**
      * Initialize PTT system
@@ -258,7 +290,7 @@ class WorkingPttManager(private val context: Context) {
      */
     fun enableSpeaker() {
         audioEngine.enableAEC(true)
-        audioManager.isSpeakerphoneOn = true
+        setSpeakerphoneOn(true)
     }
 
     /**
@@ -266,7 +298,7 @@ class WorkingPttManager(private val context: Context) {
      */
     fun enableEarpiece() {
         audioEngine.enableAEC(false)
-        audioManager.isSpeakerphoneOn = false
+        setSpeakerphoneOn(false)
     }
 
     /**

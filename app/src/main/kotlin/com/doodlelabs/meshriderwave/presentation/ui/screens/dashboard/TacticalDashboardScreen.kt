@@ -96,6 +96,7 @@ enum class ReadinessLevel(val labelRes: Int, val color: Color, val descriptionRe
 fun TacticalDashboardScreen(
     onNavigateToGroups: () -> Unit,
     onNavigateToChannels: () -> Unit,
+    onNavigateToPtt: () -> Unit = {},
     onNavigateToMap: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToContacts: () -> Unit,
@@ -188,7 +189,7 @@ fun TacticalDashboardScreen(
                     onPTTClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         android.util.Log.i("MeshRider:Dashboard", "PTT button clicked")
-                        onNavigateToChannels()
+                        onNavigateToPtt()
                     },
                     onContactsClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)

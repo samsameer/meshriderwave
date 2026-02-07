@@ -453,8 +453,14 @@ fun SettingsScreen(
                             RadioConnectionButton(
                                 isConnected = uiState.radioConnected,
                                 isConnecting = uiState.radioConnecting,
-                                onConnect = { viewModel.connectToRadio() },
-                                onDisconnect = { viewModel.disconnectFromRadio() }
+                                onConnect = {
+                                    viewModel.connectToRadio()
+                                    showSuccess("Connecting to radio...")
+                                },
+                                onDisconnect = {
+                                    viewModel.disconnectFromRadio()
+                                    showSuccess("Disconnected from radio")
+                                }
                             )
                         }
                     }
@@ -684,6 +690,7 @@ fun SettingsScreen(
             helperText = "This name is visible to other team members",
             onConfirm = { name ->
                 viewModel.setUsername(name)
+                showSuccess("Name updated to \"$name\"")
                 showNameDialog = false
             },
             onDismiss = { showNameDialog = false }
@@ -731,6 +738,7 @@ fun SettingsScreen(
             helperText = "Enter the IP address of your DoodleLabs MeshRider radio",
             onConfirm = { ip ->
                 viewModel.setRadioIp(ip)
+                showSuccess("Radio IP set to $ip")
                 showRadioIpDialog = false
             },
             onDismiss = { showRadioIpDialog = false }

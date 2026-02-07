@@ -10,7 +10,9 @@
 package com.doodlelabs.meshriderwave.core.webrtc
 
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import com.doodlelabs.meshriderwave.core.util.logD
 import com.doodlelabs.meshriderwave.core.util.logE
 import com.doodlelabs.meshriderwave.core.util.logI
@@ -80,6 +82,32 @@ class RTCCall(
     // Video sinks
     private var localVideoSink: ProxyVideoSink? = null
     private var remoteVideoSink: ProxyVideoSink? = null
+
+    /**
+     * Set speakerphone on/off using proper API for Android 12+
+     */
+    private fun setSpeakerphoneOn(on: Boolean) {
+        audioManager?.let { am ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // On Android 12+, use setCommunicationDevice
+                val devices = am.availableCommunicationDevices
+                val speakerDevice = devices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                val earpieceDevice = devices.find {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                }
+
+                if (on && speakerDevice != null) {
+                    am.setCommunicationDevice(speakerDevice)
+                } else if (!on && earpieceDevice != null) {
+                    am.setCommunicationDevice(earpieceDevice)
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = on
+            }
+        }
+    }
 
     // Enterprise Reconnection tracking (Jan 2026)
     private var reconnectAttempts = 0
@@ -334,14 +362,11 @@ class RTCCall(
 
     /**
      * Toggle speaker/earpiece
+     * Uses proper API for Android 12+ (API 31+) with AudioDeviceInfo
      */
-    @Suppress("DEPRECATION")
     fun setSpeakerEnabled(enabled: Boolean) {
         logD("setSpeakerEnabled($enabled)")
-        // Note: isSpeakerphoneOn is deprecated but still works for call audio routing
-        // Modern alternative would be AudioDeviceInfo/AudioDeviceCallback (API 31+)
-        // CRASH-FIX Jan 2026: Safe call on nullable audioManager
-        audioManager?.isSpeakerphoneOn = enabled
+        setSpeakerphoneOn(enabled)
         updateState { copy(isSpeakerEnabled = enabled) }
     }
 

@@ -21,6 +21,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Binder
@@ -76,6 +78,50 @@ class PttService : Service() {
 
     // Audio manager
     private lateinit var audioManager: AudioManager
+
+    // Track current speaker state
+    private var isSpeakerOn = false
+
+    /**
+     * Check if speakerphone is currently enabled
+     * Uses proper API for Android 12+ (API 31+)
+     */
+    private fun isSpeakerphoneOn(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // On Android 12+, check available communication devices
+            val devices = audioManager.availableCommunicationDevices
+            devices.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn
+        }
+    }
+
+    /**
+     * Set speakerphone on/off
+     * Uses proper API for Android 12+ (API 31+)
+     */
+    private fun setSpeakerphoneOn(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // On Android 12+, use setCommunicationDevice
+            val devices = audioManager.availableCommunicationDevices
+            val speakerDevice = devices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            val earpieceDevice = devices.find {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE ||
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+            }
+
+            if (on && speakerDevice != null) {
+                audioManager.setCommunicationDevice(speakerDevice)
+            } else if (!on && earpieceDevice != null) {
+                audioManager.setCommunicationDevice(earpieceDevice)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = on
+        }
+        isSpeakerOn = on
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -252,7 +298,7 @@ class PttService : Service() {
             .setContentIntent(contentIntent)
             .addAction(
                 android.R.drawable.ic_lock_silent_mode_off,
-                if (audioManager.isSpeakerphoneOn) "Earpiece" else "Speaker",
+                if (isSpeakerphoneOn()) "Earpiece" else "Speaker",
                 toggleSpeakerPendingIntent
             )
             .addAction(
@@ -306,15 +352,15 @@ class PttService : Service() {
     }
 
     private fun toggleSpeaker() {
-        val isSpeaker = !audioManager.isSpeakerphoneOn
-        audioManager.isSpeakerphoneOn = isSpeaker
-        
+        val isSpeaker = !isSpeakerphoneOn()
+        setSpeakerphoneOn(isSpeaker)
+
         if (isSpeaker) {
             pttManager?.enableSpeaker()
         } else {
             pttManager?.enableEarpiece()
         }
-        
+
         updateNotification()
         Log.i(TAG, "Speaker toggled: $isSpeaker")
     }

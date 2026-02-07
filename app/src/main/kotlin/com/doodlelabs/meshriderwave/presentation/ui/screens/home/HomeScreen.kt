@@ -47,6 +47,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToChannels: () -> Unit = {},
     onNavigateToMap: () -> Unit = {},
+    onNavigateToPtt: () -> Unit = {},
     onNavigateToContacts: () -> Unit = {},
     onNavigateToQRScan: () -> Unit = {},
     onStartCall: (String) -> Unit,
@@ -105,7 +106,7 @@ fun HomeScreen(
                 // PRIMARY ACTION CARDS - Main tactical features
                 item {
                     PrimaryActionCards(
-                        onPTT = onNavigateToChannels,
+                        onPTT = onNavigateToPtt,
                         onCallTeam = onNavigateToGroups,
                         onSOS = onActivateSOS,
                         onMap = onNavigateToMap,

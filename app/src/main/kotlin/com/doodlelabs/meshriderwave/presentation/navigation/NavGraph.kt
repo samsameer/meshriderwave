@@ -7,6 +7,7 @@ package com.doodlelabs.meshriderwave.presentation.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -24,6 +25,18 @@ import com.doodlelabs.meshriderwave.presentation.ui.screens.map.MapScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.qr.QRScanScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.qr.QRShowScreen
 import com.doodlelabs.meshriderwave.presentation.ui.screens.settings.SettingsScreen
+import com.doodlelabs.meshriderwave.ptt.WorkingPttScreen
+import com.doodlelabs.meshriderwave.ptt.WorkingPttManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.EntryPointAccessors
+
+/**
+ * Hilt EntryPoint for accessing WorkingPttManager in NavGraph
+ */
+interface PttManagerEntryPoint {
+    fun pttManager(): WorkingPttManager
+}
 
 /**
  * Navigation routes
@@ -31,6 +44,7 @@ import com.doodlelabs.meshriderwave.presentation.ui.screens.settings.SettingsScr
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
     data object Dashboard : Screen("dashboard")
+    data object Ptt : Screen("ptt")
     data object Contacts : Screen("contacts")
     data object Groups : Screen("groups")
     data object Channels : Screen("channels")
@@ -67,6 +81,7 @@ fun MeshRiderNavGraph(
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToChannels = { navController.navigate(Screen.Channels.route) },
                 onNavigateToMap = { navController.navigate(Screen.Map.route) },
+                onNavigateToPtt = { navController.navigate(Screen.Ptt.route) },
                 onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
                 onNavigateToQRScan = { navController.navigate(Screen.QRScan.route) },
                 onStartCall = onStartCall,
@@ -79,6 +94,7 @@ fun MeshRiderNavGraph(
             TacticalDashboardScreen(
                 onNavigateToGroups = { navController.navigate(Screen.Groups.route) },
                 onNavigateToChannels = { navController.navigate(Screen.Channels.route) },
+                onNavigateToPtt = { navController.navigate(Screen.Ptt.route) },
                 onNavigateToMap = { navController.navigate(Screen.Map.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToContacts = { navController.navigate(Screen.Contacts.route) },
@@ -117,6 +133,21 @@ fun MeshRiderNavGraph(
 
         composable(Screen.Channels.route) {
             ChannelsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToPtt = { navController.navigate(Screen.Ptt.route) }
+            )
+        }
+
+        composable(Screen.Ptt.route) {
+            val context = LocalContext.current
+            val pttManager = remember {
+                EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    PttManagerEntryPoint::class.java
+                ).pttManager()
+            }
+            WorkingPttScreen(
+                pttManager = pttManager,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

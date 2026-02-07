@@ -64,6 +64,7 @@ core-uwb = "1.0.0-alpha09"
 junit = "4.13.2"
 junit-ext = "1.2.1"
 espresso = "3.6.1"
+test-rules = "1.5.0"
 mockk = "1.13.13"
 turbine = "1.2.0"
 
@@ -147,6 +148,7 @@ core-uwb = { group = "androidx.core.uwb", name = "uwb", version.ref = "core-uwb"
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 junit-ext = { group = "androidx.test.ext", name = "junit", version.ref = "junit-ext" }
 espresso = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+test-rules = { group = "androidx.test", name = "rules", version.ref = "test-rules" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }

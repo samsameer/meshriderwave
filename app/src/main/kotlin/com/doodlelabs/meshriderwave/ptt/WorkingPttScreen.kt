@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicNone
@@ -62,11 +63,22 @@ fun WorkingPttScreen(
 ) {
     val context = LocalContext.current
     val isTransmitting by pttManager.isTransmitting.collectAsState()
+    val isReceiving by pttManager.isReceiving.collectAsState()
     val currentSpeaker by pttManager.currentSpeaker.collectAsState()
-    val latency = remember { mutableStateOf(pttManager.getLatency()) }
+    val networkHealthy by pttManager.networkHealthy.collectAsState()
+    val latency by pttManager.latency.collectAsState()
 
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+
+    val stats = remember { mutableStateOf(pttManager.getStats()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            stats.value = pttManager.getStats()
+        }
+    }
 
     // PTT button press state
     var isPressing by remember { mutableStateOf(false) }
@@ -136,9 +148,9 @@ fun WorkingPttScreen(
                     color = PremiumColors.TextPrimary
                 )
 
-                if (latency.value > 0) {
+                if (latency > 0) {
                     Text(
-                        text = "${latency.value}ms",
+                        text = "${latency}ms",
                         style = MaterialTheme.typography.bodySmall,
                         color = PremiumColors.ElectricCyan
                     )
@@ -154,7 +166,7 @@ fun WorkingPttScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.VolumeUp,
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = null,
                         tint = PremiumColors.ElectricCyan,
                         modifier = Modifier.size(24.dp)
@@ -293,38 +305,18 @@ fun WorkingPttScreen(
             // Instructions
             Spacer(modifier = Modifier.height(16.dp))
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = PremiumColors.SpaceGrayLight
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "HOW TO USE",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = PremiumColors.TextSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "• Tap button to toggle PTT\n" +
-                               "• Only one person at a time\n" +
-                               "• Works on WiFi network",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PremiumColors.TextPrimary,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
+            // Quality indicator card
+            PttQualityIndicator(
+                isTransmitting = isTransmitting,
+                isReceiving = isReceiving,
+                currentSpeaker = currentSpeaker,
+                networkHealthy = networkHealthy,
+                latencyMs = latency,
+                packetsSent = stats.value.packetsSent,
+                packetsReceived = stats.value.packetsReceived,
+                isUsingMulticast = stats.value.isUsingMulticast,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         }
     }
 }
