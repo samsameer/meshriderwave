@@ -18,14 +18,14 @@ find_package(oboe REQUIRED CONFIG)
 
 # Opus codec - per 3GPP TS 26.179 MCPTT mandatory codec
 # Added Feb 2026 for 10-40x bandwidth reduction (256kbps → 6-24kbps)
-# Using libopus from conan or prebuilt library
+# Using libopus from official repository
 include(FetchContent)
 
 # Try to find system Opus first, otherwise fetch
 find_package(Opus QUIET)
 
 if(NOT Opus_FOUND)
-    # Fetch libopus from GitHub (official repository)
+    # Fetch libopus from official GitLab repository
     FetchContent_Declare(
         opus
         GIT_REPOSITORY https://gitlab.xiph.org/xiph/opus.git
@@ -38,7 +38,7 @@ else()
 endif()
 
 # PTT Audio Library
-# CRITICAL FIX: AudioEngine.cpp contains the full implementation including callbacks
+# CRITICAL: AudioEngine.cpp contains the full implementation including callbacks
 # AudioCapture.cpp and AudioPlayback.cpp are legacy files with older implementations
 # Only include AudioEngine.cpp to avoid duplicate symbol errors
 add_library(meshriderptt SHARED
@@ -46,6 +46,8 @@ add_library(meshriderptt SHARED
     ptt/JniBridge.cpp
     ptt/RtpPacketizer.cpp
     ptt/OpusCodec.cpp
+    ptt/VadProcessor.cpp      # VAD: Energy-based voice activity detection
+    ptt/NoiseSuppressor.cpp   # Noise suppression: Spectral subtraction algorithm
 )
 
 target_include_directories(meshriderptt PRIVATE
@@ -56,7 +58,7 @@ target_include_directories(meshriderptt PRIVATE
 target_link_libraries(meshriderptt
     PUBLIC
     oboe::oboe
-    opus  # CRITICAL FIX: Opus target from FetchContent is "opus" not "opus::opus"
+    opus  # Opus target from FetchContent is "opus" not "opus::opus"
     android
     log
 )
@@ -70,4 +72,9 @@ target_compile_options(meshriderptt PRIVATE
     -ffast-math
     -fomit-frame-pointer
     -O3
+)
+
+# Export JNI symbols for Java/Kotlin interop
+set_target_properties(meshriderptt PROPERTIES
+    ANDROID_STL c++_shared
 )

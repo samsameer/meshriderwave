@@ -53,15 +53,15 @@ class FloorControlProtocol(
         const val MSG_HEARTBEAT = 8      // NEW: Keep-alive
 
         // Timing constants (PRODUCTION TUNED)
-        private const val FLOOR_TIMEOUT_MS = 500L       // Initial timeout
-        private const val MAX_RETRY_COUNT = 3           // Max retries
-        private const val RETRY_BASE_DELAY_MS = 200L    // Base retry delay
-        private const val MAX_RETRY_DELAY_MS = 1000L    // Max retry delay
-        private const val HEARTBEAT_INTERVAL_MS = 5000L // Keep-alive interval
-        private const val PEER_TIMEOUT_MS = 15000L      // Peer considered offline
+        const val FLOOR_TIMEOUT_MS = 500L       // Initial timeout
+        const val MAX_RETRY_COUNT = 3           // Max retries
+        const val RETRY_BASE_DELAY_MS = 200L    // Base retry delay
+        const val MAX_RETRY_DELAY_MS = 1000L    // Max retry delay
+        const val HEARTBEAT_INTERVAL_MS = 5000L // Keep-alive interval
+        const val PEER_TIMEOUT_MS = 15000L      // Peer considered offline
 
         // Sequence number window for deduplication
-        private const val SEQUENCE_WINDOW = 100
+        const val SEQUENCE_WINDOW = 100
     }
 
     // Floor state - use AtomicBoolean for thread-safe floor arbitration

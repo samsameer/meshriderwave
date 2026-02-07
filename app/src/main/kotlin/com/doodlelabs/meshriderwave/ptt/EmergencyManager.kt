@@ -377,7 +377,7 @@ data class EmergencyStats(
 /**
  * Emergency priority levels per 3GPP MCPTP TS 24.379
  */
-enum class EmergencyPriority(val level: Int, val name: String) {
+enum class EmergencyPriority(val level: Int, val priorityName: String) {
     EMERGENCY(0, "EMERGENCY"),
     HIGH(1, "HIGH"),
     NORMAL(2, "NORMAL"),

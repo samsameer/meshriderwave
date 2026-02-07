@@ -64,8 +64,8 @@ class PttRecordingManager @Inject constructor(
         // Encryption
         private const val ENCRYPTION_ALGORITHM = "AES"
         private const val ENCRYPTION_MODE = "AES/GCM/NoPadding"
-        private const val GCM_TAG_LENGTH = 128
-        private const val GCM_IV_LENGTH = 12
+        const val GCM_TAG_LENGTH = 128
+        const val GCM_IV_LENGTH = 12
 
         // Storage
         private const val RECORDINGS_DIR = "ptt_recordings"
@@ -328,12 +328,10 @@ class PttRecordingManager @Inject constructor(
                 if (includeMetadata) {
                     val metaFile = File(recording.filePath.replace(".ptt", ".meta.json"))
                     if (metaFile.exists()) {
-                        val metaOutput = FileOutputStream(
-                            File(destination.path ?: destination.toString())
-                                .let { File(it.parentFile, "${it.nameWithoutExtension}.meta.json") }
-                        )
-                        metaFile.copyTo(metaOutput)
-                        metaOutput.close()
+                        // Create metadata output file in same directory as export
+                        val destFile = File(destination.path ?: destination.toString())
+                        val metaOutputFile = File(destFile.parent, "${destFile.nameWithoutExtension}.meta.json")
+                        metaFile.copyTo(metaOutputFile)
                     }
                 }
 
@@ -552,10 +550,6 @@ class PttRecordingManager @Inject constructor(
         val formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
         return formatter.format(this)
     }
-
-    private fun Instant.isBefore(other: Instant): Boolean {
-        return this.isBefore(other)
-    }
 }
 
 /**
@@ -629,14 +623,18 @@ private class PttRecordingWriter(
     private var frameCount = 0
     private var totalBytes = 0L
 
+    // Local constants
+    private val GCM_IV_LENGTH_LOCAL = 12
+    private val GCM_TAG_LENGTH_LOCAL = 128
+
     init {
         // Initialize encryption
         val random = SecureRandom()
-        iv = ByteArray(GCM_IV_LENGTH)
+        iv = ByteArray(GCM_IV_LENGTH_LOCAL)
         random.nextBytes(iv)
 
-        cipher = Cipher.getInstance(ENCRYPTION_MODE)
-        val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+        cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val spec = GCMParameterSpec(GCM_TAG_LENGTH_LOCAL, iv)
         cipher?.init(Cipher.ENCRYPT_MODE, encryptionKey, spec)
 
         // Open file
@@ -658,9 +656,9 @@ private class PttRecordingWriter(
 
             stream.write("PTT\u0000".toByteArray()) // Magic
             stream.write(1) // Version
-            stream.writeInt(GCM_IV_LENGTH) // IV length
-            stream.write(iv) // IV
-            stream.writeInt(0) // Frame count placeholder
+            writeIntToStream(stream, GCM_IV_LENGTH_LOCAL) // IV length
+            stream.write(iv ?: byteArrayOf()) // IV
+            writeIntToStream(stream, 0) // Frame count placeholder
         }
     }
 
@@ -673,7 +671,7 @@ private class PttRecordingWriter(
 
         // Write frame length and data
         val frameLength = encrypted.size
-        outputStream.writeInt(frameLength)
+        writeIntToStream(outputStream, frameLength)
         outputStream.write(encrypted)
 
         frameCount++
@@ -682,9 +680,9 @@ private class PttRecordingWriter(
         // Reset cipher for next frame (new IV per frame for GCM)
         if (!isLast) {
             val random = SecureRandom()
-            val newIv = ByteArray(GCM_IV_LENGTH)
+            val newIv = ByteArray(GCM_IV_LENGTH_LOCAL)
             random.nextBytes(newIv)
-            val spec = GCMParameterSpec(GCM_TAG_LENGTH, newIv)
+            val spec = GCMParameterSpec(GCM_TAG_LENGTH_LOCAL, newIv)
             this.cipher?.init(Cipher.ENCRYPT_MODE, encryptionKey, spec)
         }
     }
@@ -692,17 +690,15 @@ private class PttRecordingWriter(
     fun close() {
         // Update frame count in header
         outputStream?.let { stream ->
-            stream.channel.position(13) // Position after magic + version + iv_length + iv
-            writeInt(frameCount)
+            if (stream.channel != null) {
+                stream.channel.position(13) // Position after magic + version + iv_length + iv
+                writeIntToStream(stream, frameCount)
+            }
             stream.close()
         }
     }
 
-    private fun FileOutputStream.writeInt(value: Int) {
-        this.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array())
-    }
-
-    private fun FileOutputStream.write(data: ByteArray) {
-        this.write(data, 0, data.size)
+    private fun writeIntToStream(stream: FileOutputStream, value: Int) {
+        stream.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array())
     }
 }

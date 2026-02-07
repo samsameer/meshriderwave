@@ -43,6 +43,15 @@ class PttNoiseSuppressor @Inject constructor(
         private const val TAG = "MeshRider:NoiseSuppressor"
         private const val SAMPLE_RATE = 16000 // 16kHz for PTT
         private const val FRAME_SIZE = 480 // 30ms at 16kHz
+
+        // Load native library
+        init {
+            try {
+                System.loadLibrary("meshriderptt")
+            } catch (e: UnsatisfiedLinkError) {
+                // Native library not available - noise suppression will be disabled
+            }
+        }
     }
 
     // Native processor handle
@@ -227,17 +236,6 @@ class PttNoiseSuppressor @Inject constructor(
     private external fun nativeReset(handle: Long)
 
     private external fun nativeDestroy(handle: Long)
-
-    companion object {
-        // Load native library
-        init {
-            try {
-                System.loadLibrary("pttaudio")
-            } catch (e: UnsatisfiedLinkError) {
-                // Native library not available - noise suppression will be disabled
-            }
-        }
-    }
 }
 
 /**

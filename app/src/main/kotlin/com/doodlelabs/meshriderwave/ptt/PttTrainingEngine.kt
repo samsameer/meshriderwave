@@ -87,7 +87,7 @@ class PttTrainingEngine @Inject constructor(
     private val _activeScenario = MutableStateFlow<TrainingScenario?>(null)
     val activeScenario: StateFlow<TrainingScenario?> = _activeScenario.asStateFlow()
 
-    private val _scenarioProgress = MutableStateFlow(ScenarioProgress?>(null))
+    private val _scenarioProgress = MutableStateFlow<ScenarioProgress?>(null)
     val scenarioProgress: StateFlow<ScenarioProgress?> = _scenarioProgress.asStateFlow()
 
     // Statistics

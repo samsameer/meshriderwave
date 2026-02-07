@@ -323,7 +323,7 @@ class FloorControlProtocolTest {
         }
 
         // Wait for all
-        val results = jobs.mapAwait { it.await() }
+        val results = jobs.map { it.await() }
 
         advanceUntilIdle()
 

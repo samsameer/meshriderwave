@@ -58,6 +58,15 @@ class PttVadDetector @Inject constructor(
 
         // Voice activation threshold (consecutive frames)
         private const val DEFAULT_VOICE_FRAMES_THRESHOLD = 3 // 90ms of speech
+
+        // Load native library
+        init {
+            try {
+                System.loadLibrary("meshriderptt")
+            } catch (e: UnsatisfiedLinkError) {
+                // Native library not available - VAD will be disabled
+            }
+        }
     }
 
     // Native VAD handle
@@ -363,17 +372,6 @@ class PttVadDetector @Inject constructor(
     private external fun nativeReset(handle: Long)
 
     private external fun nativeDestroy(handle: Long)
-
-    companion object {
-        // Load native library
-        init {
-            try {
-                System.loadLibrary("pttaudio")
-            } catch (e: UnsatisfiedLinkError) {
-                // Native library not available - VAD will be disabled
-            }
-        }
-    }
 }
 
 /**
@@ -414,6 +412,9 @@ class VadPttController(
     private val pttManager: WorkingPttManager
 ) {
     private var isTransmitting = false
+
+    // Coroutine scope for async PTT operations
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     init {
         // Set up VAD callbacks
@@ -472,9 +473,12 @@ class VadPttController(
      */
     private fun onVoiceDetected() {
         if (!isTransmitting && vadDetector.isArmed.value) {
-            val success = pttManager.startTransmission()
-            if (success) {
-                isTransmitting = true
+            // Launch coroutine for suspend function
+            scope.launch {
+                val success = pttManager.startTransmission()
+                if (success) {
+                    isTransmitting = true
+                }
             }
         }
     }
@@ -499,6 +503,13 @@ class VadPttController(
             isVoiceDetected = vadDetector.isVoiceDetected.value,
             sensitivity = vadDetector.currentSensitivity.value
         )
+    }
+
+    /**
+     * Cleanup resources
+     */
+    fun cleanup() {
+        scope.cancel()
     }
 }
 
